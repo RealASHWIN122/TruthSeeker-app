@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
@@ -50,30 +51,31 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             KotlearnTheme {
-                // We create the navigation controller here
                 val navController = rememberNavController()
 
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    // NavHost defines the screens and how to move between them
                     NavHost(
                         navController = navController,
                         startDestination = "home",
                         modifier = Modifier.padding(innerPadding)
                     ) {
-                        // SCREEN 1: The Home Screen (Your original UI)
+                        // SCREEN 1: Home
                         composable("home") {
                             GreetingImage(
-                                message = "Deepfake Detection",
-                                from = "Truth Seeker",
-                                onContinueClicked = {
-                                    navController.navigate("detection")
-                                }
+                                message = "Truth Seeker",
+                                onScanClicked = { navController.navigate("detection") },
+                                onAboutClicked = { navController.navigate("about") } // New navigation
                             )
                         }
 
-                        // SCREEN 2: The New Detection Page
+                        // SCREEN 2: Detection
                         composable("detection") {
                             DetectionScreen()
+                        }
+
+                        // SCREEN 3: About (The new empty page)
+                        composable("about") {
+                            AboutScreen()
                         }
                     }
                 }
@@ -82,13 +84,20 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// --- The New Detection Screen ---
+// --- The New Empty Page ---
+@Composable
+fun AboutScreen() {
+    Surface(modifier = Modifier.fillMaxSize()) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(text = "About Page (Empty)", fontSize = 24.sp)
+        }
+    }
+}
+
+// --- The Detection Screen ---
 @Composable
 fun DetectionScreen() {
-    // 1. State to hold the selected image URI
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
-
-    // 2. The Launcher that opens the gallery
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { uri -> selectedImageUri = uri }
@@ -102,8 +111,6 @@ fun DetectionScreen() {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-
-            // 3. Display the Image (or a placeholder if null)
             if (selectedImageUri != null) {
                 AsyncImage(
                     model = selectedImageUri,
@@ -114,24 +121,16 @@ fun DetectionScreen() {
                     contentScale = ContentScale.Crop
                 )
             } else {
-                // Placeholder Text
                 Text(
                     text = "No image selected",
                     fontSize = 18.sp,
                     color = androidx.compose.ui.graphics.Color.Gray
                 )
             }
-
             Spacer(modifier = Modifier.height(32.dp))
-
-            // 4. Buttons Row
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Button 1: Upload
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 OutlinedButton(
                     onClick = {
-                        // Launch the photo picker (Images Only)
                         photoPickerLauncher.launch(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                         )
@@ -139,12 +138,8 @@ fun DetectionScreen() {
                 ) {
                     Text("Select Image")
                 }
-
-                // Button 2: Analyze (Enabled only if image is selected)
                 Button(
-                    onClick = {
-                        // TODO: Connect to your Deepfake Detection Model/Backend
-                    },
+                    onClick = { /* TODO: Analyze Logic */ },
                     enabled = selectedImageUri != null
                 ) {
                     Text("Analyze")
@@ -154,34 +149,62 @@ fun DetectionScreen() {
     }
 }
 
-// --- Your Original Composables ---
-
+// --- UPDATED: Now has TWO buttons ---
 @Composable
+
 fun GreetingText(
-    from: String,
     message: String,
     modifier: Modifier = Modifier,
-    onContinueClicked: () -> Unit
+    onScanClicked: () -> Unit,
+    onAboutClicked: () -> Unit
 ) {
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.Center,
+        // This arrangement places the first item at top, last at bottom,
+        // and the middle item (the new image) exactly in the center.
+        verticalArrangement = Arrangement.SpaceBetween,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // 1. The Title Text (Top)
         Text(
             text = message,
             fontSize = 66.sp,
             lineHeight = 70.sp,
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 60.dp)
         )
 
-        Button(
-            onClick = onContinueClicked,
+        // 2. The New Middle Image
+        // Replace R.drawable.androidparty with your specific image
+        Image(
+            painter = painterResource(R.drawable.androidparty),
+            contentDescription = null,
             modifier = Modifier
-                .padding(16.dp)
-                .align(Alignment.End)
+                .size(250.dp) // Adjust size as needed
+                .clip(RoundedCornerShape(16.dp)), // Optional: adds rounded corners
+            contentScale = ContentScale.Crop
+        )
+
+        // 3. The Buttons (Bottom)
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(bottom = 150.dp)
         ) {
-            Text(text = from, fontSize = 20.sp)
+            Button(
+                onClick = onScanClicked,
+                modifier = Modifier.width(200.dp)
+            ) {
+                Text(text = "Scan", fontSize = 30.sp)
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Button(
+                onClick = onAboutClicked,
+                modifier = Modifier.width(200.dp)
+            ) {
+                Text(text = "About", fontSize = 30.sp)
+            }
         }
     }
 }
@@ -189,9 +212,9 @@ fun GreetingText(
 @Composable
 fun GreetingImage(
     message: String,
-    from: String,
     modifier: Modifier = Modifier,
-    onContinueClicked: () -> Unit
+    onScanClicked: () -> Unit,
+    onAboutClicked: () -> Unit
 ) {
     val image = painterResource(R.drawable.androidparty)
     Box(modifier) {
@@ -204,11 +227,11 @@ fun GreetingImage(
         )
         GreetingText(
             message = message,
-            from = from,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(8.dp),
-            onContinueClicked = onContinueClicked
+            onScanClicked = onScanClicked,
+            onAboutClicked = onAboutClicked
         )
     }
 }
@@ -218,15 +241,9 @@ fun GreetingImage(
 fun BirthdayCardPreview() {
     KotlearnTheme {
         GreetingImage(
-            message = "Deepfake Detection",
-            from = "Truth Seeker",
-            onContinueClicked = {}
+            message = "Truth Seeker",
+            onScanClicked = {},
+            onAboutClicked = {}
         )
     }
 }
-
-
-
-
-
-
