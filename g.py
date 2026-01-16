@@ -4,9 +4,9 @@ from df_arena.modeling_antispoofing import DF_Arena_1B_Antispoofing
 from df_arena.configuration_antispoofing import DF_Arena_1B_Config
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-CHECKPOINT_PATH = "pytorch_model.bin"   # change if needed
+CHECKPOINT_PATH = "pytorch_model.bin"   
 
-# 1️⃣ Load model
+
 config = DF_Arena_1B_Config()
 model = DF_Arena_1B_Antispoofing(config)
 
