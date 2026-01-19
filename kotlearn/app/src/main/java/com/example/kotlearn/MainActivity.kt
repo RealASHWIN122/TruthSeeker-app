@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
@@ -169,6 +170,7 @@ fun GreetingText(
         Text(
             text = message,
             fontSize = 66.sp,
+            color=Color.Cyan,
             lineHeight = 70.sp,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 60.dp)
@@ -177,7 +179,7 @@ fun GreetingText(
         // 2. The New Middle Image
         // Replace R.drawable.androidparty with your specific image
         Image(
-            painter = painterResource(R.drawable.androidparty),
+            painter = painterResource(id = R.drawable.cyverlogo),
             contentDescription = null,
             modifier = Modifier
                 .size(250.dp) // Adjust size as needed
@@ -203,7 +205,7 @@ fun GreetingText(
                 onClick = onAboutClicked,
                 modifier = Modifier.width(200.dp)
             ) {
-                Text(text = "About", fontSize = 30.sp)
+                Text(text = "Fact Check", fontSize = 30.sp)
             }
         }
     }
@@ -216,14 +218,14 @@ fun GreetingImage(
     onScanClicked: () -> Unit,
     onAboutClicked: () -> Unit
 ) {
-    val image = painterResource(R.drawable.androidparty)
+    val image = painterResource(R.drawable.cyberbg)
     Box(modifier) {
         Image(
             painter = image,
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
-            alpha = 0.5f
+            alpha = 5.5f
         )
         GreetingText(
             message = message,
