@@ -225,7 +225,7 @@ fun GreetingImage(
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
-            alpha = 5.5f
+            alpha = 1.0f
         )
         GreetingText(
             message = message,
