@@ -64,7 +64,7 @@ class MainActivity : ComponentActivity() {
                         composable("home") {
                             GreetingImage(
                                 message = "Truth Seeker",
-                                onScanClicked = { navController.navigate("Detection") },
+                                onScanClicked = { navController.navigate("detection") },
                                 onAboutClicked = { navController.navigate("about") } // New navigation
                             )
                         }
