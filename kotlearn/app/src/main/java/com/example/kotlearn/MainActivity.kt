@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -65,7 +66,7 @@ class MainActivity : ComponentActivity() {
                             GreetingImage(
                                 message = "Truth Seeker",
                                 onScanClicked = { navController.navigate("detection") },
-                                onAboutClicked = { navController.navigate("about") } // New navigation
+                                onAboutClicked = { navController.navigate("about") }
                             )
                         }
 
@@ -74,7 +75,7 @@ class MainActivity : ComponentActivity() {
                             DetectionScreen()
                         }
 
-                        // SCREEN 3: About (The new empty page)
+                        // SCREEN 3: About
                         composable("about") {
                             AboutScreen()
                         }
@@ -125,7 +126,7 @@ fun DetectionScreen() {
                 Text(
                     text = "No image selected",
                     fontSize = 18.sp,
-                    color = androidx.compose.ui.graphics.Color.Gray
+                    color = Color.Gray // Cleaned up
                 )
             }
             Spacer(modifier = Modifier.height(32.dp))
@@ -150,9 +151,8 @@ fun DetectionScreen() {
     }
 }
 
-// --- UPDATED: Now has TWO buttons ---
+// --- UPDATED: Home Screen UI ---
 @Composable
-
 fun GreetingText(
     message: String,
     modifier: Modifier = Modifier,
@@ -161,42 +161,47 @@ fun GreetingText(
 ) {
     Column(
         modifier = modifier,
-        // This arrangement places the first item at top, last at bottom,
-        // and the middle item (the new image) exactly in the center.
-        verticalArrangement = Arrangement.SpaceBetween,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // 1. The Title Text (Top)
+        // Top Spacer
+        Spacer(modifier = Modifier.height(60.dp))
+
+        // 1. The Title Text
         Text(
             text = message,
             fontSize = 66.sp,
-            color=Color.Cyan,
+            color = Color.Cyan,
             lineHeight = 70.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 60.dp)
+            textAlign = TextAlign.Center
         )
 
-        // 2. The New Middle Image
-        // Replace R.drawable.androidparty with your specific image
+        // Flexible Spacer to push image to center
+        Spacer(modifier = Modifier.weight(1f))
+
+        // 2. The Middle Image
+        // Ensure "cyverlogo" exists in res/drawable, otherwise rename to "cyberlogo"
         Image(
             painter = painterResource(id = R.drawable.cyverlogo),
             contentDescription = null,
             modifier = Modifier
-                .size(250.dp) // Adjust size as needed
-                .clip(RoundedCornerShape(16.dp)), // Optional: adds rounded corners
+                .size(250.dp)
+                .clip(RoundedCornerShape(16.dp)),
             contentScale = ContentScale.Crop
         )
 
-        // 3. The Buttons (Bottom)
+        // Flexible Spacer to push buttons down
+        Spacer(modifier = Modifier.weight(1f))
+
+        // 3. The Buttons
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(bottom = 150.dp)
+            modifier = Modifier.padding(bottom = 80.dp) // Adjusted padding
         ) {
             Button(
                 onClick = onScanClicked,
                 modifier = Modifier.width(200.dp)
             ) {
-                Text(text = "Scan", fontSize = 30.sp)
+                Text(text = "Scan", fontSize = 24.sp)
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -205,7 +210,7 @@ fun GreetingText(
                 onClick = onAboutClicked,
                 modifier = Modifier.width(200.dp)
             ) {
-                Text(text = "Fact Check", fontSize = 30.sp)
+                Text(text = "Fact Check", fontSize = 24.sp)
             }
         }
     }
@@ -218,14 +223,16 @@ fun GreetingImage(
     onScanClicked: () -> Unit,
     onAboutClicked: () -> Unit
 ) {
+    // Ensure "cyberbg" exists in res/drawable
     val image = painterResource(R.drawable.cyberbg)
+
     Box(modifier) {
         Image(
             painter = image,
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
-            alpha = 1.0f
+            alpha = 0.9f // FIXED: Must be between 0.0f (transparent) and 1.0f (opaque)
         )
         GreetingText(
             message = message,
