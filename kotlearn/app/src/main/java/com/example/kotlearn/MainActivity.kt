@@ -8,23 +8,32 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.* // Import all layout components
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Send
-import androidx.compose.material3.* // Import all Material3 components
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -39,6 +48,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import coil.compose.AsyncImage
 import com.example.kotlearn.ui.theme.KotlearnTheme
+import kotlinx.coroutines.delay
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
@@ -48,14 +58,18 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             KotlearnTheme {
-                // Main Navigation Controller
                 val navController = rememberNavController()
 
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                    // UPDATED: Added slide transitions to the NavHost
                     NavHost(
                         navController = navController,
                         startDestination = "home",
-                        modifier = Modifier.padding(innerPadding)
+                        modifier = Modifier.padding(innerPadding),
+                        enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, animationSpec = tween(500)) },
+                        exitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Left, animationSpec = tween(500)) },
+                        popEnterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = tween(500)) },
+                        popExitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = tween(500)) }
                     ) {
                         // 1. HOME SCREEN
                         composable("home") {
@@ -66,18 +80,25 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
-                        // 2. SCAN OPTIONS SCREEN (Quick vs Deep)
+                        // 2. SCAN OPTIONS
                         composable("scan_options") {
-                            ScanTypeScreen(navController)
+                            ScanTypeScreen(
+                                onQuickClick = { navController.navigate("quick_scan") },
+                                onDeepClick = { navController.navigate("deep_upload") }
+                            )
                         }
 
-                        // 3. DEEP SCAN UPLOAD SCREEN
+                        // 3. QUICK SCAN
+                        composable("quick_scan") {
+                            QuickScanScreen(navController)
+                        }
+
+                        // 4. DEEP SCAN UPLOAD
                         composable("deep_upload") {
                             DeepUploadScreen(navController)
                         }
 
-                        // 4. ANALYSIS RESULT SCREEN (The Complex Layout)
-                        // We accept a URI argument to show the image selected
+                        // 5. DEEP ANALYSIS RESULT
                         composable(
                             route = "analysis_result/{imageUri}",
                             arguments = listOf(navArgument("imageUri") { type = NavType.StringType })
@@ -86,7 +107,7 @@ class MainActivity : ComponentActivity() {
                             AnalysisResultScreen(imageUriString)
                         }
 
-                        // 5. ABOUT SCREEN
+                        // 6. FACT CHECK
                         composable("about") {
                             AboutScreen()
                         }
@@ -98,10 +119,165 @@ class MainActivity : ComponentActivity() {
 }
 
 // ==========================================
-// SCREEN 2: SCAN OPTIONS (Quick / Deep)
+// ANIMATION HELPERS (NEW!)
+// ==========================================
+
+// 1. Bouncing Button: Shrinks when pressed
+@Composable
+fun BouncingButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    containerColor: Color = MaterialTheme.colorScheme.primary,
+    content: @Composable RowScope.() -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    // Animate scale: 1f (normal) -> 0.95f (pressed)
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        label = "buttonScale"
+    )
+
+    Button(
+        onClick = onClick,
+        modifier = modifier.scale(scale),
+        enabled = enabled,
+        colors = ButtonDefaults.buttonColors(containerColor = containerColor),
+        interactionSource = interactionSource,
+        content = content
+    )
+}
+
+// 2. Typewriter Text: Types out string character by character
+@Composable
+fun TypewriterText(
+    text: String,
+    modifier: Modifier = Modifier,
+    style: androidx.compose.ui.text.TextStyle
+) {
+    var visibleText by remember { mutableStateOf("") }
+
+    LaunchedEffect(text) {
+        visibleText = ""
+        text.forEachIndexed { index, _ ->
+            delay(100) // Speed of typing
+            visibleText = text.substring(0, index + 1)
+        }
+    }
+
+    Text(text = visibleText, modifier = modifier, style = style)
+}
+
+// ==========================================
+// SCREEN 1: HOME COMPONENTS
+// ==========================================
+
+@Composable
+fun GreetingImage(
+    message: String,
+    modifier: Modifier = Modifier,
+    onScanClicked: () -> Unit,
+    onAboutClicked: () -> Unit
+) {
+    // Ensure "cyberbg" exists in res/drawable
+    val image = painterResource(R.drawable.cyberbg)
+
+    Box(modifier) {
+        Image(
+            painter = image,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+            alpha = 0.9f
+        )
+        GreetingText(
+            message = message,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp),
+            onScanClicked = onScanClicked,
+            onAboutClicked = onAboutClicked
+        )
+    }
+}
+
+@Composable
+fun GreetingText(
+    message: String,
+    modifier: Modifier = Modifier,
+    onScanClicked: () -> Unit,
+    onAboutClicked: () -> Unit
+) {
+    // Fade in animation for the buttons
+    var buttonsVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(1000) // Wait for title to type a bit
+        buttonsVisible = true
+    }
+
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(modifier = Modifier.height(60.dp))
+
+        // ANIMATION: Typewriter effect for title
+        TypewriterText(
+            text = message,
+            style = LocalTextStyle.current.copy(
+                fontSize = 50.sp, // Slightly smaller to fit typing
+                color = Color.Cyan,
+                lineHeight = 60.sp,
+                textAlign = TextAlign.Center,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace // Cyber font look
+            )
+        )
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        // Ensure "cyverlogo" exists in res/drawable
+        Image(
+            painter = painterResource(id = R.drawable.cyverlogo),
+            contentDescription = null,
+            modifier = Modifier
+                .size(250.dp)
+                .clip(RoundedCornerShape(16.dp)),
+            contentScale = ContentScale.Crop
+        )
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        // ANIMATION: Buttons slide up
+        AnimatedVisibility(
+            visible = buttonsVisible,
+            enter = slideInVertically(initialOffsetY = { 100 }) + fadeIn()
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(bottom = 80.dp)
+            ) {
+                BouncingButton(onClick = onScanClicked, modifier = Modifier.width(200.dp)) {
+                    Text(text = "Scan", fontSize = 24.sp)
+                }
+                Spacer(modifier = Modifier.height(20.dp))
+                BouncingButton(onClick = onAboutClicked, modifier = Modifier.width(200.dp)) {
+                    Text(text = "Fact Check", fontSize = 24.sp)
+                }
+            }
+        }
+    }
+}
+
+// ==========================================
+// SCREEN 2: SCAN OPTIONS
 // ==========================================
 @Composable
-fun ScanTypeScreen(navController: NavController) {
+fun ScanTypeScreen(
+    onQuickClick: () -> Unit,
+    onDeepClick: () -> Unit
+) {
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -111,19 +287,23 @@ fun ScanTypeScreen(navController: NavController) {
             Text("Select Scan Type", fontSize = 30.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(40.dp))
 
-            Button(
-                onClick = { /* TODO: Quick Logic */ },
-                modifier = Modifier.width(200.dp).height(60.dp)
+            BouncingButton(
+                onClick = onQuickClick,
+                modifier = Modifier
+                    .width(200.dp)
+                    .height(60.dp)
             ) {
                 Text("Quick Scan", fontSize = 20.sp)
             }
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            Button(
-                onClick = { navController.navigate("deep_upload") },
-                modifier = Modifier.width(200.dp).height(60.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+            BouncingButton(
+                onClick = onDeepClick,
+                modifier = Modifier
+                    .width(200.dp)
+                    .height(60.dp),
+                containerColor = MaterialTheme.colorScheme.secondary
             ) {
                 Text("Deep Scan", fontSize = 20.sp)
             }
@@ -132,7 +312,165 @@ fun ScanTypeScreen(navController: NavController) {
 }
 
 // ==========================================
-// SCREEN 3: DEEP UPLOAD
+// SCREEN 3: QUICK SCAN (Animated)
+// ==========================================
+@Composable
+fun QuickScanScreen(navController: NavController) {
+    var screenState by remember { mutableStateOf("upload") }
+    var selectedUri by remember { mutableStateOf<Uri?>(null) }
+
+    // Pulse animation for loading
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800),
+            repeatMode = RepeatMode.Reverse
+        ), label = "pulse"
+    )
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { uri -> selectedUri = uri }
+    )
+
+    LaunchedEffect(screenState) {
+        if (screenState == "loading") {
+            delay(2000)
+            screenState = "result"
+        }
+    }
+
+    Surface(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // CROSSFADE: Smoothly switch between states
+            AnimatedContent(
+                targetState = screenState,
+                transitionSpec = {
+                    fadeIn(animationSpec = tween(600)) togetherWith fadeOut(animationSpec = tween(600))
+                }, label = "scanState"
+            ) { targetState ->
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+
+                    if (targetState == "upload") {
+                        Text("Quick Scan Media", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(30.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .size(200.dp)
+                                .background(Color.LightGray.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+                                .border(1.dp, Color.Gray, RoundedCornerShape(16.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (selectedUri != null) {
+                                AsyncImage(
+                                    model = selectedUri,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Icon(Icons.Default.Add, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(40.dp))
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(20.dp))
+                        BouncingButton(onClick = { photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+                            Text("Select Image")
+                        }
+                        Spacer(modifier = Modifier.height(20.dp))
+                        BouncingButton(
+                            onClick = { screenState = "loading" },
+                            enabled = selectedUri != null,
+                            modifier = Modifier.fillMaxWidth(0.6f)
+                        ) {
+                            Text("Analyze Now")
+                        }
+                    }
+
+                    else if (targetState == "loading") {
+                        // ANIMATION: Pulsing Icon
+                        Box(
+                            modifier = Modifier
+                                .scale(pulseScale) // Applies the pulse
+                                .size(100.dp)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f), CircleShape)
+                                .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("AI", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.height(30.dp))
+                        Text("Scanning pixels...", fontSize = 18.sp, color = Color.Gray)
+                    }
+
+                    else if (targetState == "result") {
+                        // ANIMATION: Spring Pop for the checkmark
+                        var iconVisible by remember { mutableStateOf(false) }
+                        LaunchedEffect(Unit) { iconVisible = true }
+
+                        AnimatedVisibility(
+                            visible = iconVisible,
+                            enter = scaleIn(animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF4CAF50),
+                                modifier = Modifier.size(100.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Text("Analysis Complete", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(32.dp))
+
+                        Card(
+                            elevation = CardDefaults.cardElevation(4.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(20.dp)) {
+                                VerdictRow(label = "Authenticity", value = "Authentic", valueColor = Color(0xFF4CAF50))
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                                VerdictRow(label = "Confidence", value = "98.4%", valueColor = MaterialTheme.colorScheme.onSurface)
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                                VerdictRow(label = "Media Type", value = "Image (JPEG)", valueColor = MaterialTheme.colorScheme.onSurface)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(40.dp))
+                        BouncingButton(onClick = {
+                            selectedUri = null
+                            screenState = "upload"
+                        }) {
+                            Text("Scan Another")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun VerdictRow(label: String, value: String, valueColor: Color) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, fontSize = 18.sp, color = Color.Gray)
+        Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = valueColor)
+    }
+}
+
+// ==========================================
+// SCREEN 4: DEEP UPLOAD
 // ==========================================
 @Composable
 fun DeepUploadScreen(navController: NavController) {
@@ -144,7 +482,9 @@ fun DeepUploadScreen(navController: NavController) {
     )
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -163,7 +503,9 @@ fun DeepUploadScreen(navController: NavController) {
                 AsyncImage(
                     model = selectedImageUri,
                     contentDescription = null,
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(16.dp)),
                     contentScale = ContentScale.Crop
                 )
             } else {
@@ -173,7 +515,7 @@ fun DeepUploadScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(30.dp))
 
-        Button(onClick = {
+        BouncingButton(onClick = {
             photoPickerLauncher.launch(
                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
             )
@@ -183,16 +525,15 @@ fun DeepUploadScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Button(
+        BouncingButton(
             onClick = {
                 if (selectedImageUri != null) {
-                    // Encode URI to pass it safely in navigation
                     val encodedUri = URLEncoder.encode(selectedImageUri.toString(), StandardCharsets.UTF_8.toString())
                     navController.navigate("analysis_result/$encodedUri")
                 }
             },
             enabled = selectedImageUri != null,
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            containerColor = MaterialTheme.colorScheme.primary
         ) {
             Text("Start Deep Analysis")
         }
@@ -200,19 +541,19 @@ fun DeepUploadScreen(navController: NavController) {
 }
 
 // ==========================================
-// SCREEN 4: ANALYSIS RESULT (Split Layout)
+// SCREEN 5: ANALYSIS RESULT
 // ==========================================
 @Composable
 fun AnalysisResultScreen(imageUriString: String?) {
     Row(modifier = Modifier.fillMaxSize()) {
-        // --- LEFT SIDE (50% width) ---
+        // --- LEFT SIDE (50%) ---
         Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
                 .border(width = 1.dp, color = Color.LightGray)
         ) {
-            // Left Top: Image/Video Display (50% height of Left side)
+            // Left Top: Image
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -227,17 +568,23 @@ fun AnalysisResultScreen(imageUriString: String?) {
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Fit
                     )
-                    // Fake Video Play Button Overlay
+                    // Animated Play Button Overlay
+                    val infiniteTransition = rememberInfiniteTransition(label = "playPulse")
+                    val alpha by infiniteTransition.animateFloat(
+                        initialValue = 0.5f, targetValue = 1f,
+                        animationSpec = infiniteRepeatable(tween(1000), RepeatMode.Reverse), label = "alpha"
+                    )
+
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
                         contentDescription = "Play",
-                        tint = Color.White.copy(alpha = 0.7f),
+                        tint = Color.White.copy(alpha = alpha),
                         modifier = Modifier.size(64.dp)
                     )
                 }
             }
 
-            // Left Bottom: Bulletin Points (50% height of Left side)
+            // Left Bottom: Bulletin Points
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -255,7 +602,7 @@ fun AnalysisResultScreen(imageUriString: String?) {
             }
         }
 
-        // --- RIGHT SIDE (50% width): Chat Interface ---
+        // --- RIGHT SIDE (50%): Chat ---
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -264,14 +611,13 @@ fun AnalysisResultScreen(imageUriString: String?) {
         ) {
             Text("AI Assistant", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
 
-            // Chat Messages Area
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
                     .background(Color.White, RoundedCornerShape(8.dp))
                     .border(1.dp, Color.LightGray, RoundedCornerShape(8.dp)),
-                reverseLayout = true // Start from bottom
+                reverseLayout = true
             ) {
                 item { ChatMessage("Is there anything specific you want to verify?", isUser = false) }
                 item { ChatMessage("I have analyzed the frame by frame breakdown.", isUser = false) }
@@ -279,7 +625,6 @@ fun AnalysisResultScreen(imageUriString: String?) {
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Input Area
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = "",
@@ -304,10 +649,103 @@ fun BulletPoint(text: String) {
     }
 }
 
+// ==========================================
+// SCREEN 6: FACT CHECK / ABOUT
+// ==========================================
+@Composable
+fun AboutScreen() {
+    var inputText by remember { mutableStateOf("") }
+    val messages = remember { mutableStateListOf(
+        ChatMessageData("Hello! I am your Fact Check AI.", isUser = false),
+        ChatMessageData("Paste a news URL or a claim, and I will verify its authenticity.", isUser = false)
+    ) }
+
+    Surface(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+
+            Surface(
+                shadowElevation = 4.dp,
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Fact Checker",
+                    modifier = Modifier.padding(16.dp),
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                reverseLayout = false
+            ) {
+                items(messages) { message ->
+                    // Animated Entry for Chat Bubbles
+                    AnimatedVisibility(
+                        visible = true,
+                        enter = slideInHorizontally(initialOffsetX = { if (message.isUser) 100 else -100 }) + fadeIn()
+                    ) {
+                        ChatMessage(text = message.text, isUser = message.isUser)
+                    }
+                }
+            }
+
+            Surface(
+                shadowElevation = 8.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = inputText,
+                        onValueChange = { inputText = it },
+                        placeholder = { Text("Enter a claim...") },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(24.dp),
+                        maxLines = 3
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    IconButton(
+                        onClick = {
+                            if (inputText.isNotBlank()) {
+                                messages.add(ChatMessageData(inputText, true))
+                                inputText = ""
+                            }
+                        },
+                        modifier = Modifier
+                            .size(50.dp)
+                            .background(MaterialTheme.colorScheme.primary, CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Send,
+                            contentDescription = "Send",
+                            tint = Color.White
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun ChatMessage(text: String, isUser: Boolean) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
         Surface(
@@ -324,87 +762,4 @@ fun ChatMessage(text: String, isUser: Boolean) {
     }
 }
 
-// ==========================================
-// EXISTING COMPONENTS (Unchanged)
-// ==========================================
-
-@Composable
-fun AboutScreen() {
-    Surface(modifier = Modifier.fillMaxSize()) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(text = "About Page", fontSize = 24.sp)
-        }
-    }
-}
-
-@Composable
-fun GreetingImage(
-    message: String,
-    modifier: Modifier = Modifier,
-    onScanClicked: () -> Unit,
-    onAboutClicked: () -> Unit
-) {
-    // Make sure you have R.drawable.cyberbg
-    val image = painterResource(R.drawable.cyberbg)
-
-    Box(modifier) {
-        Image(
-            painter = image,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-            alpha = 0.9f
-        )
-        GreetingText(
-            message = message,
-            modifier = Modifier.fillMaxSize().padding(8.dp),
-            onScanClicked = onScanClicked,
-            onAboutClicked = onAboutClicked
-        )
-    }
-}
-
-@Composable
-fun GreetingText(
-    message: String,
-    modifier: Modifier = Modifier,
-    onScanClicked: () -> Unit,
-    onAboutClicked: () -> Unit
-) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(modifier = Modifier.height(60.dp))
-        Text(
-            text = message,
-            fontSize = 66.sp,
-            color = Color.Cyan,
-            lineHeight = 70.sp,
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.weight(1f))
-
-        // Make sure you have R.drawable.cyverlogo
-        Image(
-            painter = painterResource(id = R.drawable.cyverlogo),
-            contentDescription = null,
-            modifier = Modifier.size(250.dp).clip(RoundedCornerShape(16.dp)),
-            contentScale = ContentScale.Crop
-        )
-        Spacer(modifier = Modifier.weight(1f))
-
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(bottom = 80.dp)
-        ) {
-            Button(onClick = onScanClicked, modifier = Modifier.width(200.dp)) {
-                Text(text = "Scan", fontSize = 24.sp)
-            }
-            Spacer(modifier = Modifier.height(20.dp))
-            Button(onClick = onAboutClicked, modifier = Modifier.width(200.dp)) {
-                Text(text = "Fact Check", fontSize = 24.sp)
-            }
-        }
-    }
-}
+data class ChatMessageData(val text: String, val isUser: Boolean)
