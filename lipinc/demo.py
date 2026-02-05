@@ -9,8 +9,6 @@ from datetime import datetime
 import time
 import os
 import dlib
-# from google.colab.patches import cv2_imshow
-
 
 def parse_args():
   parser = argparse.ArgumentParser(description='Inference code to LIPINC models')
@@ -18,7 +16,7 @@ def parse_args():
   parser.add_argument('--output_path', type=str, help='This path should be an external path point to result folder',default = "")
   parser.add_argument('--d', action="store_true", help='Use this argument when input path is a folder')
   parser.add_argument('--device', type=str, default = 'cuda', help='Set GPU or CPU as first priority')
-  parser.add_argument('--checkpoint_path', type=str, help='Name of saved checkpoint to load weights from', default= "checkpoints/Best_Weights.hdf5")
+  parser.add_argument('--checkpoint_path', type=str, help='Name of saved checkpoint to load weights from', default= "Best_Weights.hdf5")
   
   args = parser.parse_args()
   return args 
@@ -33,7 +31,7 @@ def get_result_description(real_p):
     elif real_p < 0.75 and real_p >= 0.25:
         return 'This sample is maybe real.'
     elif real_p < 0.25 and real_p >= 0.01:
-        return 'This sample is unlikely real.'
+        return 'This sample is fake.'
     elif real_p < 0.01 and real_p >= 0:
         return 'There is no chance that the sample is real.'
     else:
@@ -56,6 +54,7 @@ def get_result(input_path, advanced_folder_path, checkpoint_path):
         os.makedirs(advanced_video_folder_path, exist_ok=True)
 
         n_frames = 5
+        # This function call below is where the MediaPipe error is happening
         length_error, face, combined_frames, residue_frames, l_id, g_id = \
             get_color_structure_frames(n_frames, input_path)
 
@@ -100,16 +99,8 @@ def get_result(input_path, advanced_folder_path, checkpoint_path):
     except Exception as e:
         end = time.time()
         print("DETAILED ERROR:", repr(e))
-        return (
-            -1,
-            None,
-            None,
-            [],
-            [],
-            None,
-            round(end - start, 2),
-        )
-
+        # Re-raising allows Streamlit to see the full traceback in the logs
+        raise e 
 
 ###################################################################################################
 def create_zoom(frame,path,lip_bbox):
@@ -117,6 +108,10 @@ def create_zoom(frame,path,lip_bbox):
   frames_visible = 3
   ratio = min(frame.shape[0] / 1080, frame.shape[1] / 1920)
   lip_image = cv2.imread(os.path.join(path,"lip0.png"))
+  if lip_image is None:
+      # Fallback if image wasn't saved correctly
+      return [], None
+      
   lip_image = cv2.resize(lip_image, ( int(lip_image.shape[1]*ratio), int(lip_image.shape[0]*ratio)) )
 
 
@@ -162,21 +157,15 @@ def show_lip_extraction(background,path,lip_image,start_x,start_y):
   w = int(lip_image.shape[1]*ratio)
   h = int(lip_image.shape[0]*ratio)
 
-  # print(w,h)
-
-  # start_x=5
-  # start_y= frame.shape[0]//2
-
-  # background =  np.zeros([frame_h,frame_w,3],dtype=np.uint8) 
-  # background[:] = 255
   for image in images:
     if image[0]=="l":
       c_path = os.path.join(path,image)
       # print(c_path)
       c_image = cv2.imread(c_path)
-      new_lip_image = cv2.resize(c_image,(w,h))
-      background[start_y:start_y+h,start_x:start_x+w] = new_lip_image
-      start_x =start_x + w + w//8
+      if c_image is not None:
+          new_lip_image = cv2.resize(c_image,(w,h))
+          background[start_y:start_y+h,start_x:start_x+w] = new_lip_image
+          start_x =start_x + w + w//8
   
   start_x = 5 + w//4
   start_y= start_y + h + h//2
@@ -184,9 +173,10 @@ def show_lip_extraction(background,path,lip_image,start_x,start_y):
     if image[0]=="r":
       r_path = os.path.join(path,image)
       r_image = cv2.imread(r_path)
-      new_lip_image = cv2.resize(r_image,(w,h))
-      background[start_y:start_y+h,start_x:start_x+w] = new_lip_image
-      start_x =start_x + w + w//8
+      if r_image is not None:
+          new_lip_image = cv2.resize(r_image,(w,h))
+          background[start_y:start_y+h,start_x:start_x+w] = new_lip_image
+          start_x =start_x + w + w//8
  
   return background, start_y+h
 
@@ -284,7 +274,12 @@ def convert_2k(frame):
 
 ###################################################################################################
 def create_demo_video(input_path,color,advanced_video_folder_path,g_id,video_des):
-  datFile =  "B:\download\TruthSeeker-app\lipinc\shape_predictor_68_face_landmarks.dat"
+  # FIXED: Attempt to get the path from environment variable (set in st.py)
+  # If not found, look for it in the current directory
+  datFile = os.environ.get("DLIB_LANDMARK_PATH")
+  if not datFile or not os.path.exists(datFile):
+      datFile = "shape_predictor_68_face_landmarks.dat"
+      
   detector_pre = dlib.get_frontal_face_detector()
   predictor = dlib.shape_predictor(datFile)
 
@@ -451,8 +446,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
-
-
-
