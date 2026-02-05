@@ -18,7 +18,7 @@ class DeepfakeDetector(context: Context) {
 
     private var interpreter: Interpreter? = null
     // Make sure this filename matches exactly what is in your assets folder
-    private val MODEL_NAME = "lipinc_model.tflite"
+    private val MODEL_NAME = "lip_flex.tflite"
     private val NUM_FRAMES = 8
     private val HEIGHT = 64
     private val WIDTH = 144

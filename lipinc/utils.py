@@ -16,7 +16,7 @@ import sys
 
 
 
-datFile =  "B:\download\TruthSeeker-app\lipinc\shape_predictor_68_face_landmarks.dat"
+datFile =  "/home/me/Videos/final year project/TruthSeeker-app/lipinc/shape_predictor_68_face_landmarks.dat"
 detector_pre = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor(datFile)
 # n_frames = 5 #number of local frames

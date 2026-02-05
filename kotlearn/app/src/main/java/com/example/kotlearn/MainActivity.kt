@@ -51,7 +51,7 @@ import com.example.kotlearn.ui.theme.KotlearnTheme
 import kotlinx.coroutines.delay
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-
+import androidx.compose.material.icons.filled.Warning
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -319,48 +319,67 @@ fun QuickScanScreen(navController: NavController) {
     var screenState by remember { mutableStateOf("upload") }
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
 
-    // Pulse animation for loading
+    // Results
+    var verdict by remember { mutableStateOf("Analyzing...") }
+    var confidence by remember { mutableStateOf("0%") }
+    var mediaType by remember { mutableStateOf("Video (MP4)") }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    // ⚠️ CRITICAL: DO NOT PUT 'val detector' HERE!
+    // If you have "val detector = remember { DeepfakeDetector(context) }" here, DELETE IT.
+    // It causes the 104 skipped frames lag.
+
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.2f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800),
-            repeatMode = RepeatMode.Reverse
-        ), label = "pulse"
+        initialValue = 1f, targetValue = 1.2f,
+        animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "pulse"
     )
 
-    val photoPickerLauncher = rememberLauncherForActivityResult(
+    val videoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { uri -> selectedUri = uri }
     )
 
+    // LOGIC: Initialize and Run in Background
     LaunchedEffect(screenState) {
-        if (screenState == "loading") {
-            delay(2000)
-            screenState = "result"
+        if (screenState == "loading" && selectedUri != null) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                // 1. Create Detector (Loads model from disk)
+                // This takes ~1.5 seconds, but now it's in the background!
+                val detector = DeepfakeDetector(context)
+
+                // 2. Run Analysis
+                val result = detector.analyzeVideo(context, selectedUri!!)
+
+                // 3. Close immediately to save RAM
+                detector.close()
+
+                // 4. Update UI variables
+                verdict = result.first
+                confidence = result.second
+
+                // 5. Show Result
+                screenState = "result"
+            }
         }
     }
 
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxSize().padding(16.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // CROSSFADE: Smoothly switch between states
             AnimatedContent(
                 targetState = screenState,
-                transitionSpec = {
-                    fadeIn(animationSpec = tween(600)) togetherWith fadeOut(animationSpec = tween(600))
-                }, label = "scanState"
+                transitionSpec = { fadeIn(tween(600)) togetherWith fadeOut(tween(600)) },
+                label = "scanState"
             ) { targetState ->
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
 
                     if (targetState == "upload") {
-                        Text("Quick Scan Media", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Text("Quick Scan Video", fontSize = 24.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(30.dp))
 
                         Box(
@@ -371,23 +390,21 @@ fun QuickScanScreen(navController: NavController) {
                             contentAlignment = Alignment.Center
                         ) {
                             if (selectedUri != null) {
-                                AsyncImage(
-                                    model = selectedUri,
-                                    contentDescription = null,
-                                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)),
-                                    contentScale = ContentScale.Crop
-                                )
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.Black)
                             } else {
                                 Icon(Icons.Default.Add, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(40.dp))
                             }
                         }
 
                         Spacer(modifier = Modifier.height(20.dp))
-                        BouncingButton(onClick = { photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
-                            Text("Select Image")
+                        // Note: Ensure your BouncingButton is defined in MainActivity or replace with Button
+                        Button(onClick = {
+                            videoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+                        }) {
+                            Text("Select Video")
                         }
                         Spacer(modifier = Modifier.height(20.dp))
-                        BouncingButton(
+                        Button(
                             onClick = { screenState = "loading" },
                             enabled = selectedUri != null,
                             modifier = Modifier.fillMaxWidth(0.6f)
@@ -397,10 +414,9 @@ fun QuickScanScreen(navController: NavController) {
                     }
 
                     else if (targetState == "loading") {
-                        // ANIMATION: Pulsing Icon
                         Box(
                             modifier = Modifier
-                                .scale(pulseScale) // Applies the pulse
+                                .scale(pulseScale)
                                 .size(100.dp)
                                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f), CircleShape)
                                 .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape),
@@ -409,46 +425,40 @@ fun QuickScanScreen(navController: NavController) {
                             Text("AI", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                         }
                         Spacer(modifier = Modifier.height(30.dp))
-                        Text("Scanning pixels...", fontSize = 18.sp, color = Color.Gray)
+                        Text("Extracting frames & Analyzing...", fontSize = 18.sp, color = Color.Gray)
                     }
 
                     else if (targetState == "result") {
-                        // ANIMATION: Spring Pop for the checkmark
-                        var iconVisible by remember { mutableStateOf(false) }
-                        LaunchedEffect(Unit) { iconVisible = true }
+                        val isAuthentic = verdict == "Authentic"
+                        // Use standard colors/icons if not defined elsewhere
+                        val iconColor = if (isAuthentic) Color(0xFF4CAF50) else Color(0xFFFF5252)
+                        val iconVector = if (isAuthentic) Icons.Default.CheckCircle else Icons.Default.Warning
 
-                        AnimatedVisibility(
-                            visible = iconVisible,
-                            enter = scaleIn(animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow))
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = Color(0xFF4CAF50),
-                                modifier = Modifier.size(100.dp)
-                            )
-                        }
+                        Icon(
+                            imageVector = iconVector,
+                            contentDescription = null,
+                            tint = iconColor,
+                            modifier = Modifier.size(100.dp)
+                        )
 
                         Spacer(modifier = Modifier.height(24.dp))
                         Text("Analysis Complete", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.height(32.dp))
 
                         Card(
                             elevation = CardDefaults.cardElevation(4.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                            modifier = Modifier.fillMaxWidth().padding(16.dp)
                         ) {
                             Column(modifier = Modifier.padding(20.dp)) {
-                                VerdictRow(label = "Authenticity", value = "Authentic", valueColor = Color(0xFF4CAF50))
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-                                VerdictRow(label = "Confidence", value = "98.4%", valueColor = MaterialTheme.colorScheme.onSurface)
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-                                VerdictRow(label = "Media Type", value = "Image (JPEG)", valueColor = MaterialTheme.colorScheme.onSurface)
+                                Text("Verdict: $verdict", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = iconColor)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Confidence: $confidence", fontSize = 16.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Media Type: Video (MP4)", fontSize = 16.sp)
                             }
                         }
 
                         Spacer(modifier = Modifier.height(40.dp))
-                        BouncingButton(onClick = {
+                        Button(onClick = {
                             selectedUri = null
                             screenState = "upload"
                         }) {
@@ -460,7 +470,6 @@ fun QuickScanScreen(navController: NavController) {
         }
     }
 }
-
 @Composable
 fun VerdictRow(label: String, value: String, valueColor: Color) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
