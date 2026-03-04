@@ -6,7 +6,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -24,8 +23,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,8 +34,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -51,7 +52,7 @@ import com.example.kotlearn.ui.theme.KotlearnTheme
 import kotlinx.coroutines.delay
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import androidx.compose.material.icons.filled.Warning
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,7 +62,6 @@ class MainActivity : ComponentActivity() {
                 val navController = rememberNavController()
 
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    // UPDATED: Added slide transitions to the NavHost
                     NavHost(
                         navController = navController,
                         startDestination = "home",
@@ -71,7 +71,6 @@ class MainActivity : ComponentActivity() {
                         popEnterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = tween(500)) },
                         popExitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = tween(500)) }
                     ) {
-                        // 1. HOME SCREEN
                         composable("home") {
                             GreetingImage(
                                 message = "Truth Seeker",
@@ -80,7 +79,6 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
-                        // 2. SCAN OPTIONS
                         composable("scan_options") {
                             ScanTypeScreen(
                                 onQuickClick = { navController.navigate("quick_scan") },
@@ -88,17 +86,14 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
-                        // 3. QUICK SCAN
                         composable("quick_scan") {
                             QuickScanScreen(navController)
                         }
 
-                        // 4. DEEP SCAN UPLOAD
                         composable("deep_upload") {
                             DeepUploadScreen(navController)
                         }
 
-                        // 5. DEEP ANALYSIS RESULT
                         composable(
                             route = "analysis_result/{imageUri}",
                             arguments = listOf(navArgument("imageUri") { type = NavType.StringType })
@@ -107,7 +102,6 @@ class MainActivity : ComponentActivity() {
                             AnalysisResultScreen(imageUriString)
                         }
 
-                        // 6. FACT CHECK
                         composable("about") {
                             AboutScreen()
                         }
@@ -118,11 +112,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// ==========================================
-// ANIMATION HELPERS (NEW!)
-// ==========================================
-
-// 1. Bouncing Button: Shrinks when pressed
 @Composable
 fun BouncingButton(
     onClick: () -> Unit,
@@ -134,7 +123,6 @@ fun BouncingButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
 
-    // Animate scale: 1f (normal) -> 0.95f (pressed)
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.95f else 1f,
         label = "buttonScale"
@@ -150,7 +138,6 @@ fun BouncingButton(
     )
 }
 
-// 2. Typewriter Text: Types out string character by character
 @Composable
 fun TypewriterText(
     text: String,
@@ -162,17 +149,13 @@ fun TypewriterText(
     LaunchedEffect(text) {
         visibleText = ""
         text.forEachIndexed { index, _ ->
-            delay(100) // Speed of typing
+            delay(100)
             visibleText = text.substring(0, index + 1)
         }
     }
 
     Text(text = visibleText, modifier = modifier, style = style)
 }
-
-// ==========================================
-// SCREEN 1: HOME COMPONENTS
-// ==========================================
 
 @Composable
 fun GreetingImage(
@@ -181,7 +164,6 @@ fun GreetingImage(
     onScanClicked: () -> Unit,
     onAboutClicked: () -> Unit
 ) {
-    // Ensure "cyberbg" exists in res/drawable
     val image = painterResource(R.drawable.cyberbg)
 
     Box(modifier) {
@@ -210,10 +192,9 @@ fun GreetingText(
     onScanClicked: () -> Unit,
     onAboutClicked: () -> Unit
 ) {
-    // Fade in animation for the buttons
     var buttonsVisible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        delay(1000) // Wait for title to type a bit
+        delay(1000)
         buttonsVisible = true
     }
 
@@ -223,21 +204,19 @@ fun GreetingText(
     ) {
         Spacer(modifier = Modifier.height(60.dp))
 
-        // ANIMATION: Typewriter effect for title
         TypewriterText(
             text = message,
             style = LocalTextStyle.current.copy(
-                fontSize = 50.sp, // Slightly smaller to fit typing
+                fontSize = 50.sp,
                 color = Color.Cyan,
                 lineHeight = 60.sp,
                 textAlign = TextAlign.Center,
-                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace // Cyber font look
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
             )
         )
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // Ensure "cyverlogo" exists in res/drawable
         Image(
             painter = painterResource(id = R.drawable.cyverlogo),
             contentDescription = null,
@@ -249,7 +228,6 @@ fun GreetingText(
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // ANIMATION: Buttons slide up
         AnimatedVisibility(
             visible = buttonsVisible,
             enter = slideInVertically(initialOffsetY = { 100 }) + fadeIn()
@@ -270,9 +248,6 @@ fun GreetingText(
     }
 }
 
-// ==========================================
-// SCREEN 2: SCAN OPTIONS
-// ==========================================
 @Composable
 fun ScanTypeScreen(
     onQuickClick: () -> Unit,
@@ -311,24 +286,16 @@ fun ScanTypeScreen(
     }
 }
 
-// ==========================================
-// SCREEN 3: QUICK SCAN (Animated)
-// ==========================================
 @Composable
 fun QuickScanScreen(navController: NavController) {
     var screenState by remember { mutableStateOf("upload") }
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
 
-    // Results
     var verdict by remember { mutableStateOf("Analyzing...") }
     var confidence by remember { mutableStateOf("0%") }
-    var mediaType by remember { mutableStateOf("Video (MP4)") }
+    var mediaType by remember { mutableStateOf("Media") }
 
-    val context = androidx.compose.ui.platform.LocalContext.current
-
-    // ⚠️ CRITICAL: DO NOT PUT 'val detector' HERE!
-    // If you have "val detector = remember { DeepfakeDetector(context) }" here, DELETE IT.
-    // It causes the 104 skipped frames lag.
+    val context = LocalContext.current
 
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
@@ -336,30 +303,29 @@ fun QuickScanScreen(navController: NavController) {
         animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "pulse"
     )
 
-    val videoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
+    val mediaPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
         onResult = { uri -> selectedUri = uri }
     )
 
-    // LOGIC: Initialize and Run in Background
     LaunchedEffect(screenState) {
         if (screenState == "loading" && selectedUri != null) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                // 1. Create Detector (Loads model from disk)
-                // This takes ~1.5 seconds, but now it's in the background!
                 val detector = DeepfakeDetector(context)
-
-                // 2. Run Analysis
                 val result = detector.analyzeVideo(context, selectedUri!!)
-
-                // 3. Close immediately to save RAM
                 detector.close()
 
-                // 4. Update UI variables
                 verdict = result.first
                 confidence = result.second
+                
+                val mime = context.contentResolver.getType(selectedUri!!)
+                mediaType = when {
+                    mime?.startsWith("video") == true -> "Video"
+                    mime?.startsWith("audio") == true -> "Audio"
+                    mime?.startsWith("image") == true -> "Image"
+                    else -> "Media"
+                }
 
-                // 5. Show Result
                 screenState = "result"
             }
         }
@@ -379,7 +345,7 @@ fun QuickScanScreen(navController: NavController) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
 
                     if (targetState == "upload") {
-                        Text("Quick Scan Video", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Text("Quick Scan Media", fontSize = 24.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(30.dp))
 
                         Box(
@@ -390,18 +356,28 @@ fun QuickScanScreen(navController: NavController) {
                             contentAlignment = Alignment.Center
                         ) {
                             if (selectedUri != null) {
-                                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.Black)
+                                val mimeType = context.contentResolver.getType(selectedUri!!)
+                                when {
+                                    mimeType?.startsWith("image") == true -> {
+                                        AsyncImage(model = selectedUri, contentDescription = null, modifier = Modifier.clip(RoundedCornerShape(16.dp)), contentScale = ContentScale.Crop)
+                                    }
+                                    mimeType?.startsWith("audio") == true -> {
+                                        Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.Black)
+                                    }
+                                    else -> {
+                                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.Black)
+                                    }
+                                }
                             } else {
                                 Icon(Icons.Default.Add, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(40.dp))
                             }
                         }
 
                         Spacer(modifier = Modifier.height(20.dp))
-                        // Note: Ensure your BouncingButton is defined in MainActivity or replace with Button
                         Button(onClick = {
-                            videoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+                            mediaPickerLauncher.launch("*/*")
                         }) {
-                            Text("Select Video")
+                            Text("Select Media")
                         }
                         Spacer(modifier = Modifier.height(20.dp))
                         Button(
@@ -425,12 +401,11 @@ fun QuickScanScreen(navController: NavController) {
                             Text("AI", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                         }
                         Spacer(modifier = Modifier.height(30.dp))
-                        Text("Extracting frames & Analyzing...", fontSize = 18.sp, color = Color.Gray)
+                        Text("Analyzing Media...", fontSize = 18.sp, color = Color.Gray)
                     }
 
                     else if (targetState == "result") {
                         val isAuthentic = verdict == "Authentic"
-                        // Use standard colors/icons if not defined elsewhere
                         val iconColor = if (isAuthentic) Color(0xFF4CAF50) else Color(0xFFFF5252)
                         val iconVector = if (isAuthentic) Icons.Default.CheckCircle else Icons.Default.Warning
 
@@ -453,7 +428,7 @@ fun QuickScanScreen(navController: NavController) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text("Confidence: $confidence", fontSize = 16.sp)
                                 Spacer(modifier = Modifier.height(8.dp))
-                                Text("Media Type: Video (MP4)", fontSize = 16.sp)
+                                Text("Media Type: $mediaType", fontSize = 16.sp)
                             }
                         }
 
@@ -470,24 +445,15 @@ fun QuickScanScreen(navController: NavController) {
         }
     }
 }
-@Composable
-fun VerdictRow(label: String, value: String, valueColor: Color) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, fontSize = 18.sp, color = Color.Gray)
-        Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = valueColor)
-    }
-}
 
-// ==========================================
-// SCREEN 4: DEEP UPLOAD
-// ==========================================
 @Composable
 fun DeepUploadScreen(navController: NavController) {
-    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedMediaUri by remember { mutableStateOf<Uri?>(null) }
+    val context = LocalContext.current
 
-    val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
-        onResult = { uri -> selectedImageUri = uri }
+    val mediaPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+        onResult = { uri -> selectedMediaUri = uri }
     )
 
     Column(
@@ -508,15 +474,26 @@ fun DeepUploadScreen(navController: NavController) {
                 .border(2.dp, Color.Gray, RoundedCornerShape(16.dp)),
             contentAlignment = Alignment.Center
         ) {
-            if (selectedImageUri != null) {
-                AsyncImage(
-                    model = selectedImageUri,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(RoundedCornerShape(16.dp)),
-                    contentScale = ContentScale.Crop
-                )
+            if (selectedMediaUri != null) {
+                val mimeType = context.contentResolver.getType(selectedMediaUri!!)
+                when {
+                    mimeType?.startsWith("image") == true -> {
+                        AsyncImage(
+                            model = selectedMediaUri,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(16.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                    mimeType?.startsWith("audio") == true -> {
+                        Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(100.dp), tint = Color.Gray)
+                    }
+                    else -> {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(100.dp), tint = Color.Gray)
+                    }
+                }
             } else {
                 Text("No Media Selected", color = Color.Gray)
             }
@@ -525,23 +502,21 @@ fun DeepUploadScreen(navController: NavController) {
         Spacer(modifier = Modifier.height(30.dp))
 
         BouncingButton(onClick = {
-            photoPickerLauncher.launch(
-                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-            )
+            mediaPickerLauncher.launch("*/*")
         }) {
-            Text("Choose File")
+            Text("Choose Media")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
         BouncingButton(
             onClick = {
-                if (selectedImageUri != null) {
-                    val encodedUri = URLEncoder.encode(selectedImageUri.toString(), StandardCharsets.UTF_8.toString())
+                if (selectedMediaUri != null) {
+                    val encodedUri = URLEncoder.encode(selectedMediaUri.toString(), StandardCharsets.UTF_8.toString())
                     navController.navigate("analysis_result/$encodedUri")
                 }
             },
-            enabled = selectedImageUri != null,
+            enabled = selectedMediaUri != null,
             containerColor = MaterialTheme.colorScheme.primary
         ) {
             Text("Start Deep Analysis")
@@ -549,20 +524,19 @@ fun DeepUploadScreen(navController: NavController) {
     }
 }
 
-// ==========================================
-// SCREEN 5: ANALYSIS RESULT
-// ==========================================
 @Composable
 fun AnalysisResultScreen(imageUriString: String?) {
+    val context = LocalContext.current
+    val uri = imageUriString?.let { Uri.parse(it) }
+    val mimeType = uri?.let { context.contentResolver.getType(it) }
+
     Row(modifier = Modifier.fillMaxSize()) {
-        // --- LEFT SIDE (50%) ---
         Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
                 .border(width = 1.dp, color = Color.LightGray)
         ) {
-            // Left Top: Image
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -571,29 +545,42 @@ fun AnalysisResultScreen(imageUriString: String?) {
                 contentAlignment = Alignment.Center
             ) {
                 if (imageUriString != null) {
-                    AsyncImage(
-                        model = imageUriString,
-                        contentDescription = "Analyzed Media",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit
-                    )
-                    // Animated Play Button Overlay
-                    val infiniteTransition = rememberInfiniteTransition(label = "playPulse")
-                    val alpha by infiniteTransition.animateFloat(
-                        initialValue = 0.5f, targetValue = 1f,
-                        animationSpec = infiniteRepeatable(tween(1000), RepeatMode.Reverse), label = "alpha"
-                    )
+                    when {
+                        mimeType?.startsWith("image") == true -> {
+                            AsyncImage(
+                                model = imageUriString,
+                                contentDescription = "Analyzed Media",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+                        mimeType?.startsWith("audio") == true -> {
+                            Icon(Icons.Default.MusicNote, contentDescription = "Audio", tint = Color.White, modifier = Modifier.size(80.dp))
+                        }
+                        else -> {
+                            AsyncImage(
+                                model = imageUriString,
+                                contentDescription = "Analyzed Media",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Fit
+                            )
+                            val infiniteTransition = rememberInfiniteTransition(label = "playPulse")
+                            val alpha by infiniteTransition.animateFloat(
+                                initialValue = 0.5f, targetValue = 1f,
+                                animationSpec = infiniteRepeatable(tween(1000), RepeatMode.Reverse), label = "alpha"
+                            )
 
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Play",
-                        tint = Color.White.copy(alpha = alpha),
-                        modifier = Modifier.size(64.dp)
-                    )
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Play",
+                                tint = Color.White.copy(alpha = alpha),
+                                modifier = Modifier.size(64.dp)
+                            )
+                        }
+                    }
                 }
             }
 
-            // Left Bottom: Bulletin Points
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -604,14 +591,13 @@ fun AnalysisResultScreen(imageUriString: String?) {
             ) {
                 Text("Analysis Report", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.height(8.dp))
-                BulletPoint("Facial landmarks show 92% consistency.")
-                BulletPoint("Lighting artifacts detected in background.")
-                BulletPoint("Audio frequency matches human vocal range.")
+                BulletPoint("Signal consistency check: passed.")
+                BulletPoint("Metadata artifacts: none detected.")
+                BulletPoint("AI pattern matching: negative.")
                 BulletPoint("Deepfake Probability: LOW")
             }
         }
 
-        // --- RIGHT SIDE (50%): Chat ---
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -629,7 +615,7 @@ fun AnalysisResultScreen(imageUriString: String?) {
                 reverseLayout = true
             ) {
                 item { ChatMessage("Is there anything specific you want to verify?", isUser = false) }
-                item { ChatMessage("I have analyzed the frame by frame breakdown.", isUser = false) }
+                item { ChatMessage("I have analyzed the media structure.", isUser = false) }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -658,9 +644,6 @@ fun BulletPoint(text: String) {
     }
 }
 
-// ==========================================
-// SCREEN 6: FACT CHECK / ABOUT
-// ==========================================
 @Composable
 fun AboutScreen() {
     var inputText by remember { mutableStateOf("") }
@@ -695,7 +678,6 @@ fun AboutScreen() {
                 reverseLayout = false
             ) {
                 items(messages) { message ->
-                    // Animated Entry for Chat Bubbles
                     AnimatedVisibility(
                         visible = true,
                         enter = slideInHorizontally(initialOffsetX = { if (message.isUser) 100 else -100 }) + fadeIn()
