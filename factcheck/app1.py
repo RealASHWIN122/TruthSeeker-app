@@ -1,272 +1,94 @@
-import streamlit as st
-import os
-import yt_dlp
-import pandas as pd
-import altair as alt
-import datetime
-import whisper
-from dateutil import parser
-import requests
+from fastapi import FastAPI
+from pydantic import BaseModel
+from llama_cpp import Llama
+from duckduckgo_search import DDGS
+import time
 
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_community.utilities import SerpAPIWrapper
+import logging
+logging.getLogger("streamlit").setLevel(logging.ERROR)
 
+app = FastAPI(title="TruthSeeker Local Fact-Check API")
 
-# =====================================================
-# HARD-CODED API KEYS  ⚠️ DO NOT PUSH TO PUBLIC GIT
-# =====================================================
-GOOGLE_API_KEY = ""
-SERPAPI_API_KEY = ""
-
-os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
-os.environ["SERPAPI_API_KEY"] = SERPAPI_API_KEY
-
-# =====================================================
-# STREAMLIT CONFIG
-# =====================================================
-st.set_page_config(
-    page_title="Rumor Verifier",
-    page_icon="🕵️",
-    layout="wide"
-)
-
-
-# =====================================================
-# SIDEBAR
-# =====================================================
-with st.sidebar:
-    st.header("🛠 Agent Configuration")
-
-    st.info(
-        "Uses **Google Gemini ** for reasoning and "
-        "**Local Whisper** for transcription.\n\n"
-        "API keys are configured internally."
+print("Waking up the local AI... (This might take 10-20 seconds)")
+try:
+    # Load the Phi-3 model into your laptop's RAM
+    llm = Llama(
+        model_path="models/Phi-3-mini-4k-instruct-q4.gguf",
+        n_ctx=4096,      # Memory size for reading search results
+        n_gpu_layers=0,  # 0 = Run on CPU (perfect for integrated graphics)
+        verbose=False    # Keeps the terminal output clean
     )
+    print("✅ AI is awake and ready!")
+except Exception as e:
+    print(f"❌ Error loading model: {e}")
+    print("Make sure 'Phi-3-mini-4k-instruct-q4.gguf' is inside a folder named 'models'!")
 
-    st.subheader("📡 Sources Monitored")
-    st.markdown(
-        "- Times of India\n"
-        "- The Hindu\n"
-        "- NDTV\n"
-        "- Indian Express\n"
-        "- LiveMint\n"
-        "- YouTube News Clips"
-    )
+# Define what the Android App will send us
+class CheckRequest(BaseModel):
+    claim_text: str
 
-
-# =====================================================
-# SESSION STATE
-# =====================================================
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {
-            "role": "assistant",
-            "content": "Hello! Share a rumor or news claim, and I’ll verify it using reputed sources."
-        }
-    ]
-
-
-# =====================================================
-# FUNCTIONS
-# =====================================================
-def search_text_articles(query: str):
-    """Search reputed Indian news sites using SerpAPI."""
-    sites = [
-        "timesofindia.indiatimes.com",
-        "thehindu.com",
-        "ndtv.com",
-        "indianexpress.com",
-        "livemint.com"
-    ]
-
-    site_filter = " OR ".join([f"site:{s}" for s in sites])
-    full_query = f"{query} ({site_filter})"
-
-    search = SerpAPIWrapper()
-    results = search.results(full_query)
-
-    articles = []
-    for r in results.get("organic_results", []):
-        date_text = r.get("date", "")
-        try:
-            parsed_date = parser.parse(date_text, fuzzy=True)
-        except Exception:
-            parsed_date = datetime.datetime.now()
-
-        articles.append({
-            "source": r.get("source", "News Article"),
-            "title": r.get("title"),
-            "link": r.get("link"),
-            "snippet": r.get("snippet", ""),
-            "date": parsed_date,
-            "type": "Article"
-        })
-
-    return articles
-
-
-def search_recent_news_videos(query: str):
-    """Search YouTube news videos via SerpAPI."""
-    params = {
-        "engine": "google",
-        "q": f"{query} site:youtube.com",
-        "tbm": "vid",
-        "tbs": "qdr:m",
-        "api_key": SERPAPI_API_KEY
-    }
-
-    response = requests.get("https://serpapi.com/search", params=params)
-    data = response.json()
-
-    videos = []
-    for v in data.get("video_results", [])[:1]:
-        try:
-            parsed_date = parser.parse(v.get("date", ""), fuzzy=True)
-        except Exception:
-            parsed_date = datetime.datetime.now()
-
-        videos.append({
-            "source": v.get("source", "YouTube"),
-            "title": v.get("title"),
-            "link": v.get("link"),
-            "snippet": v.get("snippet", ""),
-            "date": parsed_date,
-            "type": "Video"
-        })
-
-    return videos
-
-
-def transcribe_video_local(video_url: str):
-    """Download audio and transcribe using local Whisper."""
+def web_search(query: str):
+    """Searches DuckDuckGo silently in the background."""
     try:
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "outtmpl": "temp_audio.%(ext)s",
-            "quiet": True,
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192"
-            }]
-        }
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([video_url])
-
-        model = whisper.load_model("base")
-        result = model.transcribe("temp_audio.mp3")
-
-        os.remove("temp_audio.mp3")
-        return result["text"]
-
+        results = DDGS().text(query, max_results=3)
+        if not results:
+            return "No recent news found."
+        
+        # Format the search results cleanly
+        evidence = "\n".join([f"- {r.get('title')}: {r.get('body')}" for r in results])
+        return evidence
     except Exception as e:
-        print("Transcription error:", e)
-        return ""
+        print(f"Search error: {e}")
+        return "Search unavailable."
 
+# The actual API Endpoint the Android App hits
+@app.post("/verify")
+def verify_claim(request: CheckRequest):
+    claim = request.claim_text
+    
+    print(f"\n🔍 Fact-checking: {claim}")
+    
+    # 1. Grab live data from the web
+    evidence = web_search(claim)
+    
+    # 2. Build the exact prompt structure that Phi-3 expects
+    prompt = f"""<|user|>
+You are an expert Fact-Checking AI. Verify this claim using ONLY the provided evidence.
 
-def analyze_verification(claim, evidence, transcript):
-    """Analyze evidence using Google Gemini."""
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3-flash-preview",
-        google_api_key=GOOGLE_API_KEY,
-        temperature=0
-    )
+CLAIM: "{claim}"
 
-    evidence_text = ""
-    for i, e in enumerate(evidence, start=1):
-        evidence_text += (
-            f"{i}. [{e['date'].strftime('%Y-%m-%d')}] "
-            f"{e['type']} - {e['source']}: {e['snippet']}\n"
-        )
-
-    prompt = f"""
-You are a professional fact-checking agent.
-
-CLAIM:
-"{claim}"
-
-EVIDENCE:
-{evidence_text}
-
-VIDEO TRANSCRIPT:
-{transcript[:1500]}
+EVIDENCE FROM WEB:
+{evidence}
 
 TASK:
-- Verdict: True / False / Misleading / Unverified
-- Earliest source
-- Brief timeline explanation
+1. Verdict: Is it True, False, Misleading, or Unverified?
+2. Explanation: Explain why in 1 or 2 short sentences.
 
-Respond in Markdown.
-"""
+FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
+Verdict: [Your Verdict]
+Explanation: [Your Explanation]<|end|>
+<|assistant|>"""
 
-    return llm.invoke(prompt).content
+    # 3. Make the AI think and generate the answer
+    start_time = time.time()
+    output = llm(
+        prompt, 
+        max_tokens=150, 
+        temperature=0.1,  # Low temperature = strict, factual answers
+        stop=["<|end|>"], 
+        echo=False
+    )
+    
+    result_text = output['choices'][0]['text'].strip()
+    print(f"⚡ Done in {round(time.time() - start_time, 2)} seconds.")
+    
+    # Send the JSON back to the Android phone
+    return {
+        "result": result_text, 
+        "evidence_used": evidence
+    }
 
-
-# =====================================================
-# UI
-# =====================================================
-st.title("🕵️ Rumor & News Verifier (Free Edition)")
-
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-
-
-if user_input := st.chat_input("Enter a rumor or news claim..."):
-
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    with st.chat_message("user"):
-        st.markdown(user_input)
-
-    with st.chat_message("assistant"):
-        status = st.status("🔍 Verifying...", expanded=True)
-
-        status.write("📰 Searching news articles...")
-        articles = search_text_articles(user_input)
-
-        status.write("📺 Searching YouTube news...")
-        videos = search_recent_news_videos(user_input)
-
-        transcript = ""
-        if videos:
-            status.write("🎙 Transcribing video...")
-            transcript = transcribe_video_local(videos[0]["link"])
-            videos[0]["snippet"] = transcript[:200]
-
-        evidence = sorted(articles + videos, key=lambda x: x["date"])
-
-        if not evidence:
-            result = "❌ **No reliable sources found for this claim.**"
-            status.update(label="No Evidence Found", state="error")
-        else:
-            status.write("🤖 Analyzing with Gemini...")
-            result = analyze_verification(user_input, evidence, transcript)
-            status.update(label="Verification Complete", state="complete")
-
-        st.markdown(result)
-
-        # Timeline
-        if evidence:
-            st.subheader("🕒 Timeline of Reports")
-
-            df = pd.DataFrame([
-                {
-                    "Date": e["date"],
-                    "Source": e["source"],
-                    "Type": e["type"],
-                    "Title": e["title"]
-                }
-                for e in evidence
-            ])
-
-            chart = alt.Chart(df).mark_circle(size=120).encode(
-                x="Date:T",
-                y="Source:N",
-                color="Type:N",
-                tooltip=["Date", "Source", "Title", "Type"]
-            ).interactive()
-
-            st.altair_chart(chart, use_container_width=True)
-
-    st.session_state.messages.append({"role": "assistant", "content": result})
+if __name__ == "__main__":
+    import uvicorn
+    # host="0.0.0.0" is magic: it allows your phone to connect over your WiFi network!
+    uvicorn.run(app, host="0.0.0.0", port=8000)
