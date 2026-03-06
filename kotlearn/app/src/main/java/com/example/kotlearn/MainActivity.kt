@@ -1,7 +1,10 @@
 package com.example.kotlearn
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -9,6 +12,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,18 +25,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -41,6 +42,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -57,6 +62,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        
+        handleIntent(intent)
+
         setContent {
             KotlearnTheme {
                 val navController = rememberNavController()
@@ -74,7 +82,15 @@ class MainActivity : ComponentActivity() {
                         composable("home") {
                             GreetingImage(
                                 message = "Truth Seeker",
-                                onScanClicked = { navController.navigate("scan_options") },
+                                onScanClicked = { 
+                                    if (!Settings.canDrawOverlays(this@MainActivity)) {
+                                        val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+                                        startActivity(intent)
+                                    } else {
+                                        startService(Intent(this@MainActivity, FloatingWidgetService::class.java))
+                                    }
+                                    navController.navigate("scan_options") 
+                                },
                                 onAboutClicked = { navController.navigate("about") }
                             )
                         }
@@ -106,6 +122,76 @@ class MainActivity : ComponentActivity() {
                             AboutScreen()
                         }
                     }
+                }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        val uriStr = intent?.getStringExtra("capturedMediaUri")
+        val scanType = intent?.getStringExtra("scanType")
+        
+        if (uriStr != null && scanType != null) {
+            Toast.makeText(this, "Received $scanType scan request for: $uriStr", Toast.LENGTH_LONG).show()
+        }
+    }
+}
+
+@Composable
+fun VideoPlayer(uri: Uri, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val exoPlayer = remember {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(uri))
+            prepare()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            exoPlayer.release()
+        }
+    }
+
+    AndroidView(
+        factory = {
+            PlayerView(context).apply {
+                player = exoPlayer
+                useController = true
+                setBackgroundColor(android.graphics.Color.BLACK)
+            }
+        },
+        modifier = modifier
+    )
+}
+
+@Composable
+fun HeatmapLayer(modifier: Modifier = Modifier) {
+    val rows = 12
+    val cols = 12
+    
+    Canvas(modifier = modifier) {
+        val cellWidth = size.width / cols
+        val cellHeight = size.height / rows
+        
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                val dx = c - 6
+                val dy = r - 7
+                val distSq = dx * dx + dy * dy
+                val intensity = (1.0f - (distSq / 15.0f)).coerceIn(0.0f, 1.0f)
+                
+                if (intensity > 0.05f) {
+                    drawRect(
+                        color = Color.Red.copy(alpha = intensity * 0.5f),
+                        topLeft = Offset(c * cellWidth, r * cellHeight),
+                        size = Size(cellWidth, cellHeight)
+                    )
                 }
             }
         }
@@ -344,100 +430,102 @@ fun QuickScanScreen(navController: NavController) {
             ) { targetState ->
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
 
-                    if (targetState == "upload") {
-                        Text("Quick Scan Media", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.height(30.dp))
+                    when (targetState) {
+                        "upload" -> {
+                            Text("Quick Scan Media", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(30.dp))
 
-                        Box(
-                            modifier = Modifier
-                                .size(200.dp)
-                                .background(Color.LightGray.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
-                                .border(1.dp, Color.Gray, RoundedCornerShape(16.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (selectedUri != null) {
-                                val mimeType = context.contentResolver.getType(selectedUri!!)
-                                when {
-                                    mimeType?.startsWith("image") == true -> {
-                                        AsyncImage(model = selectedUri, contentDescription = null, modifier = Modifier.clip(RoundedCornerShape(16.dp)), contentScale = ContentScale.Crop)
+                            Box(
+                                modifier = Modifier
+                                    .size(200.dp)
+                                    .background(Color.LightGray.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+                                    .border(1.dp, Color.Gray, RoundedCornerShape(16.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (selectedUri != null) {
+                                    val mimeType = context.contentResolver.getType(selectedUri!!)
+                                    when {
+                                        mimeType?.startsWith("image") == true -> {
+                                            AsyncImage(model = selectedUri, contentDescription = null, modifier = Modifier.clip(RoundedCornerShape(16.dp)), contentScale = ContentScale.Crop)
+                                        }
+                                        mimeType?.startsWith("audio") == true -> {
+                                            Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.Black)
+                                        }
+                                        else -> {
+                                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.Black)
+                                        }
                                     }
-                                    mimeType?.startsWith("audio") == true -> {
-                                        Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.Black)
-                                    }
-                                    else -> {
-                                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.Black)
-                                    }
+                                } else {
+                                    Icon(Icons.Default.Add, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(40.dp))
                                 }
-                            } else {
-                                Icon(Icons.Default.Add, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(40.dp))
+                            }
+
+                            Spacer(modifier = Modifier.height(20.dp))
+                            Button(onClick = {
+                                mediaPickerLauncher.launch("*/*")
+                            }) {
+                                Text("Select Media")
+                            }
+                            Spacer(modifier = Modifier.height(20.dp))
+                            Button(
+                                onClick = { screenState = "loading" },
+                                enabled = selectedUri != null,
+                                modifier = Modifier.fillMaxWidth(0.6f)
+                            ) {
+                                Text("Analyze Now")
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(20.dp))
-                        Button(onClick = {
-                            mediaPickerLauncher.launch("*/*")
-                        }) {
-                            Text("Select Media")
-                        }
-                        Spacer(modifier = Modifier.height(20.dp))
-                        Button(
-                            onClick = { screenState = "loading" },
-                            enabled = selectedUri != null,
-                            modifier = Modifier.fillMaxWidth(0.6f)
-                        ) {
-                            Text("Analyze Now")
-                        }
-                    }
-
-                    else if (targetState == "loading") {
-                        Box(
-                            modifier = Modifier
-                                .scale(pulseScale)
-                                .size(100.dp)
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f), CircleShape)
-                                .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("AI", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                        }
-                        Spacer(modifier = Modifier.height(30.dp))
-                        Text("Analyzing Media...", fontSize = 18.sp, color = Color.Gray)
-                    }
-
-                    else if (targetState == "result") {
-                        val isAuthentic = verdict == "Authentic"
-                        val iconColor = if (isAuthentic) Color(0xFF4CAF50) else Color(0xFFFF5252)
-                        val iconVector = if (isAuthentic) Icons.Default.CheckCircle else Icons.Default.Warning
-
-                        Icon(
-                            imageVector = iconVector,
-                            contentDescription = null,
-                            tint = iconColor,
-                            modifier = Modifier.size(100.dp)
-                        )
-
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Text("Analysis Complete", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-
-                        Card(
-                            elevation = CardDefaults.cardElevation(4.dp),
-                            modifier = Modifier.fillMaxWidth().padding(16.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(20.dp)) {
-                                Text("Verdict: $verdict", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = iconColor)
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text("Confidence: $confidence", fontSize = 16.sp)
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text("Media Type: $mediaType", fontSize = 16.sp)
+                        "loading" -> {
+                            Box(
+                                modifier = Modifier
+                                    .scale(pulseScale)
+                                    .size(100.dp)
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f), CircleShape)
+                                    .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("AI", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                             }
+                            Spacer(modifier = Modifier.height(30.dp))
+                            Text("Analyzing Media...", fontSize = 18.sp, color = Color.Gray)
                         }
 
-                        Spacer(modifier = Modifier.height(40.dp))
-                        Button(onClick = {
-                            selectedUri = null
-                            screenState = "upload"
-                        }) {
-                            Text("Scan Another")
+                        "result" -> {
+                            val isAuthentic = verdict == "Authentic"
+                            val iconColor = if (isAuthentic) Color(0xFF4CAF50) else Color(0xFFFF5252)
+                            val iconVector = if (isAuthentic) Icons.Default.CheckCircle else Icons.Default.Warning
+
+                            Icon(
+                                imageVector = iconVector,
+                                contentDescription = null,
+                                tint = iconColor,
+                                modifier = Modifier.size(100.dp)
+                            )
+
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Text("Analysis Complete", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+
+                            Card(
+                                elevation = CardDefaults.cardElevation(4.dp),
+                                modifier = Modifier.fillMaxWidth().padding(16.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(20.dp)) {
+                                    Text("Verdict: $verdict", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = iconColor)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("Confidence: $confidence", fontSize = 16.sp)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("Media Type: $mediaType", fontSize = 16.sp)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(40.dp))
+                            Button(onClick = {
+                                selectedUri = null
+                                screenState = "upload"
+                            }) {
+                                Text("Scan Another")
+                            }
                         }
                     }
                 }
@@ -529,108 +617,121 @@ fun AnalysisResultScreen(imageUriString: String?) {
     val context = LocalContext.current
     val uri = imageUriString?.let { Uri.parse(it) }
     val mimeType = uri?.let { context.contentResolver.getType(it) }
+    
+    var showHeatmap by remember { mutableStateOf(false) }
 
-    Row(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .border(width = 1.dp, color = Color.LightGray)
-        ) {
-            Box(
+    Box(modifier = Modifier.fillMaxSize()) {
+        Row(modifier = Modifier.fillMaxSize()) {
+            Column(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
-                    .background(Color.Black),
-                contentAlignment = Alignment.Center
+                    .fillMaxHeight()
+                    .border(width = 1.dp, color = Color.LightGray)
             ) {
-                if (imageUriString != null) {
-                    when {
-                        mimeType?.startsWith("image") == true -> {
-                            AsyncImage(
-                                model = imageUriString,
-                                contentDescription = "Analyzed Media",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Fit
-                            )
-                        }
-                        mimeType?.startsWith("audio") == true -> {
-                            Icon(Icons.Default.MusicNote, contentDescription = "Audio", tint = Color.White, modifier = Modifier.size(80.dp))
-                        }
-                        else -> {
-                            AsyncImage(
-                                model = imageUriString,
-                                contentDescription = "Analyzed Media",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Fit
-                            )
-                            val infiniteTransition = rememberInfiniteTransition(label = "playPulse")
-                            val alpha by infiniteTransition.animateFloat(
-                                initialValue = 0.5f, targetValue = 1f,
-                                animationSpec = infiniteRepeatable(tween(1000), RepeatMode.Reverse), label = "alpha"
-                            )
-
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = "Play",
-                                tint = Color.White.copy(alpha = alpha),
-                                modifier = Modifier.size(64.dp)
-                            )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .background(Color.Black),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (imageUriString != null && uri != null) {
+                        when {
+                            mimeType?.startsWith("image") == true -> {
+                                AsyncImage(
+                                    model = imageUriString,
+                                    contentDescription = "Analyzed Media",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
+                            mimeType?.startsWith("audio") == true -> {
+                                Icon(Icons.Default.MusicNote, contentDescription = "Audio", tint = Color.White, modifier = Modifier.size(80.dp))
+                            }
+                            mimeType?.startsWith("video") == true -> {
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    VideoPlayer(uri = uri, modifier = Modifier.fillMaxSize())
+                                    if (showHeatmap) {
+                                        HeatmapLayer(modifier = Modifier.fillMaxSize())
+                                    }
+                                }
+                            }
+                            else -> {
+                                AsyncImage(
+                                    model = imageUriString,
+                                    contentDescription = "Analyzed Media",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
                         }
                     }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(12.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                        .padding(12.dp)
+                ) {
+                    Text("Analysis Report", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    BulletPoint("Signal consistency check: passed.")
+                    BulletPoint("Metadata artifacts: none detected.")
+                    BulletPoint("AI pattern matching: negative.")
+                    BulletPoint("Deepfake Probability: LOW")
                 }
             }
 
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
-                    .padding(12.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
-                    .padding(12.dp)
+                    .fillMaxHeight()
+                    .padding(8.dp)
             ) {
-                Text("Analysis Report", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Text("AI Assistant", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .background(Color.White, RoundedCornerShape(8.dp))
+                        .border(1.dp, Color.LightGray, RoundedCornerShape(8.dp)),
+                    reverseLayout = true
+                ) {
+                    item { ChatMessage("Is there anything specific you want to verify?", isUser = false) }
+                    item { ChatMessage("I have analyzed the media structure.", isUser = false) }
+                }
+
                 Spacer(modifier = Modifier.height(8.dp))
-                BulletPoint("Signal consistency check: passed.")
-                BulletPoint("Metadata artifacts: none detected.")
-                BulletPoint("AI pattern matching: negative.")
-                BulletPoint("Deepfake Probability: LOW")
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = "",
+                        onValueChange = {},
+                        placeholder = { Text("Ask a question...") },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(24.dp)
+                    )
+                    IconButton(onClick = { }) {
+                        Icon(imageVector = Icons.Default.Send, contentDescription = "Send")
+                    }
+                }
             }
         }
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .padding(8.dp)
-        ) {
-            Text("AI Assistant", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
-
-            LazyColumn(
+        if (mimeType?.startsWith("video") == true) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically, 
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .background(Color.White, RoundedCornerShape(8.dp))
-                    .border(1.dp, Color.LightGray, RoundedCornerShape(8.dp)),
-                reverseLayout = true
+                    .align(Alignment.TopEnd)
+                    .padding(top = 40.dp, end = 16.dp) // Adjusted padding to move it down
             ) {
-                item { ChatMessage("Is there anything specific you want to verify?", isUser = false) }
-                item { ChatMessage("I have analyzed the media structure.", isUser = false) }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = "",
-                    onValueChange = {},
-                    placeholder = { Text("Ask a question...") },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(24.dp)
-                )
-                IconButton(onClick = { }) {
-                    Icon(imageVector = Icons.Default.Send, contentDescription = "Send")
-                }
+                Text("Heatmap", fontSize = 14.sp)
+                Switch(checked = showHeatmap, onCheckedChange = { showHeatmap = it })
             }
         }
     }

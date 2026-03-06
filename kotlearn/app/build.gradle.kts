@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "com.example.kotlearn"
-    compileSdk = 35 // STABLE (Not 36!)
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.example.kotlearn"
         minSdk = 24
-        targetSdk = 35 // STABLE (Not 36!)
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -37,25 +37,29 @@ android {
         compose = true
     }
 
-    // CRITICAL FIXES FOR TFLITE
-    aaptOptions {
-        noCompress("tflite")
+    sourceSets {
+        getByName("main") {
+            // Standard assets folder
+            assets.srcDirs("src/main/assets")
+        }
     }
+
     packaging {
         jniLibs {
             useLegacyPackaging = true
         }
     }
+    androidResources {
+        noCompress += listOf("tflite")
+    }
 }
 
 dependencies {
-    // --- 1. FORCE STABLE LIBRARIES (Fixes the API 36 requirement) ---
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.1")
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
-    // --- 2. COMPOSE STABLE ---
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
@@ -63,15 +67,15 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    // --- 3. TENSORFLOW LITE ---
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
 
-    // --- 4. IMAGE LOADING ---
     implementation("io.coil-kt:coil-compose:2.6.0")
 
-    // --- 5. TESTING ---
+    implementation("androidx.media3:media3-exoplayer:1.3.1")
+    implementation("androidx.media3:media3-ui:1.3.1")
+
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
