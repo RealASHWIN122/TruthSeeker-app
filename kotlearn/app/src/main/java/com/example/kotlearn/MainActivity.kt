@@ -63,6 +63,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         
+        // Start widget automatically if permission exists
+        if (Settings.canDrawOverlays(this)) {
+            startService(Intent(this, FloatingWidgetService::class.java))
+        }
+        
         handleIntent(intent)
 
         setContent {
@@ -88,8 +93,8 @@ class MainActivity : ComponentActivity() {
                                         startActivity(intent)
                                     } else {
                                         startService(Intent(this@MainActivity, FloatingWidgetService::class.java))
+                                        navController.navigate("scan_options")
                                     }
-                                    navController.navigate("scan_options") 
                                 },
                                 onAboutClicked = { navController.navigate("about") }
                             )
@@ -124,6 +129,14 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Check if permission was granted while user was away and start widget
+        if (Settings.canDrawOverlays(this)) {
+            startService(Intent(this, FloatingWidgetService::class.java))
         }
     }
 
@@ -728,7 +741,7 @@ fun AnalysisResultScreen(imageUriString: String?) {
                 verticalAlignment = Alignment.CenterVertically, 
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = 40.dp, end = 16.dp) // Adjusted padding to move it down
+                    .padding(top = 40.dp, end = 16.dp)
             ) {
                 Text("Heatmap", fontSize = 14.sp)
                 Switch(checked = showHeatmap, onCheckedChange = { showHeatmap = it })

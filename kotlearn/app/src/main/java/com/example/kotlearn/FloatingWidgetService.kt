@@ -3,11 +3,14 @@ package com.example.kotlearn
 import android.app.*
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import android.view.*
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,6 +29,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.lifecycle.*
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import androidx.savedstate.SavedStateRegistry
@@ -37,12 +41,12 @@ class FloatingWidgetService : Service() {
 
     private lateinit var windowManager: WindowManager
     private var floatingView: View? = null
+    private lateinit var params: WindowManager.LayoutParams
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "ACTION_SCREENSHOT" || intent?.action == "ACTION_RECORD") {
-            // Simulate capture and send to app
             val dummyUri = Uri.parse("content://dummy/media") 
             sendToApp(dummyUri, isQuickScan = true)
         }
@@ -54,7 +58,9 @@ class FloatingWidgetService : Service() {
         try {
             startForegroundService()
             showFloatingWidget()
+            Toast.makeText(this, "Truth Seeker Widget Active", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
+            Log.e("FloatingWidget", "Failed to start widget", e)
             stopSelf()
         }
     }
@@ -63,9 +69,7 @@ class FloatingWidgetService : Service() {
         val channelId = "floating_widget_channel"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                channelId,
-                "Floating Widget Service",
-                NotificationManager.IMPORTANCE_LOW
+                channelId, "Floating Widget", NotificationManager.IMPORTANCE_LOW
             )
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)
@@ -73,17 +77,21 @@ class FloatingWidgetService : Service() {
 
         val notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Truth Seeker")
-            .setContentText("Widget is active")
+            .setContentText("Widget is visible on screen")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
 
-        startForeground(1, notification)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ServiceCompat.startForeground(this, 1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        } else {
+            startForeground(1, notification)
+        }
     }
 
     private fun showFloatingWidget() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        val params = WindowManager.LayoutParams(
+        params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
@@ -94,8 +102,8 @@ class FloatingWidgetService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 0
-            y = 100
+            x = 100
+            y = 300
         }
 
         val composeView = ComposeView(this).apply {
@@ -103,7 +111,18 @@ class FloatingWidgetService : Service() {
                 KotlearnTheme {
                     var showMenu by remember { mutableStateOf(false) }
                     
-                    Box(contentAlignment = Alignment.Center) {
+                    // When menu toggles, we need to let the window manager know the size might change
+                    LaunchedEffect(showMenu) {
+                        try {
+                            windowManager.updateViewLayout(this@apply, params)
+                        } catch (e: Exception) {}
+                    }
+
+                    Box(
+                        modifier = Modifier.wrapContentSize(),
+                        contentAlignment = Alignment.TopStart
+                    ) {
+                        // The main floating bubble
                         Surface(
                             modifier = Modifier
                                 .size(60.dp)
@@ -117,13 +136,14 @@ class FloatingWidgetService : Service() {
                             }
                         }
 
+                        // Options Menu
                         if (showMenu) {
                             Column(
                                 modifier = Modifier
-                                    .offset(y = 70.dp)
-                                    .background(Color.White, RoundedCornerShape(8.dp))
-                                    .padding(8.dp)
-                                    .border(1.dp, Color.LightGray, RoundedCornerShape(8.dp)),
+                                    .padding(top = 65.dp)
+                                    .background(Color.White, RoundedCornerShape(12.dp))
+                                    .border(1.dp, Color.LightGray, RoundedCornerShape(12.dp))
+                                    .padding(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 FloatingOption(Icons.Default.CameraAlt, "Screenshot") {
@@ -141,6 +161,7 @@ class FloatingWidgetService : Service() {
             }
         }
 
+        // Boilerplate for Compose in Service
         val lifecycleOwner = object : LifecycleOwner {
             private val lifecycleRegistry = LifecycleRegistry(this).apply {
                 handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
@@ -149,13 +170,11 @@ class FloatingWidgetService : Service() {
             }
             override val lifecycle: Lifecycle = lifecycleRegistry
         }
-        
         val viewModelStore = ViewModelStore()
         composeView.setViewTreeLifecycleOwner(lifecycleOwner)
         composeView.setViewTreeViewModelStoreOwner(object : ViewModelStoreOwner {
             override val viewModelStore: ViewModelStore = viewModelStore
         })
-        
         val ssrOwner = object : SavedStateRegistryOwner {
             private val controller = SavedStateRegistryController.create(this)
             init { controller.performRestore(null) }
@@ -167,6 +186,7 @@ class FloatingWidgetService : Service() {
         floatingView = composeView
         windowManager.addView(floatingView, params)
 
+        // Dragging Logic
         floatingView?.setOnTouchListener(object : View.OnTouchListener {
             private var initialX = 0
             private var initialY = 0
@@ -185,9 +205,7 @@ class FloatingWidgetService : Service() {
                     MotionEvent.ACTION_MOVE -> {
                         params.x = initialX + (event.rawX - initialTouchX).toInt()
                         params.y = initialY + (event.rawY - initialTouchY).toInt()
-                        try {
-                            windowManager.updateViewLayout(floatingView, params)
-                        } catch (e: Exception) {}
+                        try { windowManager.updateViewLayout(floatingView, params) } catch (e: Exception) {}
                         return true
                     }
                     MotionEvent.ACTION_UP -> {
@@ -238,9 +256,7 @@ class FloatingWidgetService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         if (floatingView != null) {
-            try {
-                windowManager.removeView(floatingView)
-            } catch (e: Exception) {}
+            try { windowManager.removeView(floatingView) } catch (e: Exception) {}
         }
     }
 }
