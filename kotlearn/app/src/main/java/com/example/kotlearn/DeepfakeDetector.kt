@@ -26,6 +26,7 @@ class DeepfakeDetector(context: Context) {
     init {
         val options = Interpreter.Options()
 
+        // 1. Emulator Check
         val isEmulator = Build.FINGERPRINT.contains("generic") ||
                 Build.FINGERPRINT.contains("unknown") ||
                 Build.MODEL.contains("google_sdk") ||
@@ -34,23 +35,34 @@ class DeepfakeDetector(context: Context) {
                 Build.MANUFACTURER.contains("Genymotion")
 
         if (isEmulator) {
-            options.setNumThreads(4)
+            Log.d("DeepfakeDetector", "Emulator detected. Forcing CPU mode.")
+            options.numThreads = 4
         } else {
-            if (CompatibilityList().isDelegateSupportedOnThisDevice) {
+            // 2. TFLite 2.16+ GPU Delegate Initialization
+            val compatList = CompatibilityList()
+            if (compatList.isDelegateSupportedOnThisDevice) {
                 try {
-                    options.addDelegate(GpuDelegate())
+                    val delegateOptions = GpuDelegate.Options().apply {
+                        setInferencePreference(GpuDelegate.Options.INFERENCE_PREFERENCE_SUSTAINED_SPEED)
+                    }
+                    options.addDelegate(GpuDelegate(delegateOptions))
+                    Log.d("DeepfakeDetector", "GPU Delegate Enabled")
                 } catch (e: Exception) {
-                    options.setNumThreads(4)
+                    Log.e("DeepfakeDetector", "GPU initialization failed. Falling back to CPU.", e)
+                    options.numThreads = 4
                 }
             } else {
-                options.setNumThreads(4)
+                Log.d("DeepfakeDetector", "GPU not supported on this device. Using CPU.")
+                options.numThreads = 4
             }
         }
 
+        // 3. Load Model
         try {
             val modelBuffer = loadModelFile(context, MODEL_NAME)
             if (modelBuffer != null) {
                 interpreter = Interpreter(modelBuffer, options)
+                Log.d("DeepfakeDetector", "Model Loaded Successfully")
             }
         } catch (e: Exception) {
             Log.e("DeepfakeDetector", "Error loading model", e)
@@ -61,6 +73,7 @@ class DeepfakeDetector(context: Context) {
         if (interpreter == null) return Pair("Error", "Model failed to load")
 
         try {
+            // Safe mime-type checks for non-video files
             val mimeType = context.contentResolver.getType(videoUri)
             if (mimeType?.startsWith("audio") == true) {
                 Thread.sleep(1000)
@@ -91,11 +104,14 @@ class DeepfakeDetector(context: Context) {
 
             val fakeProbability = outputBuffer[0][1]
             val verdict = if (fakeProbability > 0.50f) "Fake" else "Authentic"
+
+            // Calculate confidence cleanly
             val confidence = "${(if (verdict == "Fake") fakeProbability else 1f - fakeProbability) * 100}%"
 
             return Pair(verdict, confidence)
 
         } catch (e: Exception) {
+            Log.e("DeepfakeDetector", "Analysis failed", e)
             return Pair("Error", "Analysis Failed")
         }
     }
@@ -115,7 +131,11 @@ class DeepfakeDetector(context: Context) {
                     frames.add(Bitmap.createScaledBitmap(it, WIDTH, HEIGHT, true))
                 }
             }
-        } catch (e: Exception) { } finally { try { retriever.release() } catch (e: Exception) {} }
+        } catch (e: Exception) {
+            Log.e("DeepfakeDetector", "Frame extraction error", e)
+        } finally {
+            try { retriever.release() } catch (e: Exception) {}
+        }
         return frames
     }
 
@@ -126,6 +146,8 @@ class DeepfakeDetector(context: Context) {
             bitmap.getPixels(pixels, 0, WIDTH, 0, 0, WIDTH, HEIGHT)
             pixels
         }
+
+        // Populate frames buffer
         for (pixels in pixelArrays) {
             for (pixel in pixels) {
                 frameBuf.putFloat((pixel shr 16 and 0xFF) / 255.0f)
@@ -133,6 +155,8 @@ class DeepfakeDetector(context: Context) {
                 frameBuf.putFloat((pixel and 0xFF) / 255.0f)
             }
         }
+
+        // Populate residues buffer
         for (i in 1 until pixelArrays.size) {
             val curr = pixelArrays[i]; val prev = pixelArrays[i - 1]
             for (j in curr.indices) {
@@ -149,6 +173,7 @@ class DeepfakeDetector(context: Context) {
             val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
             inputStream.channel.map(FileChannel.MapMode.READ_ONLY, fileDescriptor.startOffset, fileDescriptor.declaredLength)
         } catch (e: Exception) {
+            Log.e("DeepfakeDetector", "Could not find model file in assets", e)
             null
         }
     }

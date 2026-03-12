@@ -39,7 +39,6 @@ android {
 
     sourceSets {
         getByName("main") {
-            // Standard assets folder
             assets.srcDirs("src/main/assets")
         }
     }
@@ -67,9 +66,12 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    implementation("org.tensorflow:tensorflow-lite:2.14.0")
-    implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.14.0")
-    implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
+    // --- CRITICAL FIX: Google's new 16KB-aligned LiteRT Libraries ---
+    implementation("com.google.ai.edge.litert:litert:1.4.1")
+    implementation("com.google.ai.edge.litert:litert-api:1.4.1")
+    implementation("com.google.ai.edge.litert:litert-gpu:1.4.1")
+    implementation("com.google.ai.edge.litert:litert-gpu-api:1.4.1")
+    // Note: tensorflow-lite-select-tf-ops has been REMOVED.
 
     implementation("io.coil-kt:coil-compose:2.6.0")
 
