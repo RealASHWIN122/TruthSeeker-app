@@ -99,11 +99,38 @@ python -m venv venv2
 source venv2/bin/activate  # (or venv2\Scripts\activate on Windows)
 pip install fastapi uvicorn llama-cpp-python duckduckgo-search
 ```
-*Ensure you download `Phi-3-mini-4k-instruct-q4.gguf` and place it in `factcheck/models/`.*
+*Ensure you download the [Phi-3-mini-4k-instruct-q4.gguf](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf) model and place it in `factcheck/models/`.*
 ```bash
 python app1.py
 ```
 *The API will start on `0.0.0.0:8000`, making it accessible to the Android app on the same network.*
+
+---
+
+## 🏋️‍♂️ Training the Models from Scratch
+
+Due to file size constraints, the pre-trained deepfake weights (`.pth`, `.h5`) and the on-device Edge model (`.tflite`) are not included in the repository. You can recreate them by running the provided training and compilation scripts.
+
+### 1. Training the Temporal Model
+Train the `TimeSformer` physics engine using your own dataset:
+```bash
+# Point to your pre-extracted video frames directory
+python temporal2/train.py --data_dir /path/to/your/dataset --epochs 10 --batch_size 2
+```
+*The best model weights will be saved as `temporal_best_model.pth` in the checkpoints directory.*
+
+### 2. Converting to TFLite (Android Edge)
+To deploy your newly trained temporal model to Android, convert it to a `.tflite` package:
+1. Copy your new `temporal_best_model.pth` to `modelly/Edge/`.
+2. Run the Edge compilation script:
+```bash
+cd modelly/Edge
+pip install ai-edge-torch
+python convertoedge.py
+```
+3. Rename the generated output to `lip_flex.tflite` and place it in `kotlearn/app/src/main/assets/`.
+
+*(Note: If you have backup datasets like `kotlearn2.zip` locally, they are ignored by Git and won't be pushed).*
 
 ---
 
