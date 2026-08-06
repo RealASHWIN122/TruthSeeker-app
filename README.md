@@ -14,61 +14,9 @@
 
 ## 📖 Overview
 
-**TruthSeeker** is a comprehensive, multi-modal application designed to detect synthetic media (deepfakes) and verify the authenticity of digital rumors. Built as a collaborative project, it leverages a hybrid **Edge + Cloud AI architecture** inspired by the state-of-the-art **Skyra** methodology. 
+**TruthSeeker** is a comprehensive, multi-modal application designed to detect synthetic media (deepfakes) and verify the authenticity of digital rumors. It leverages a hybrid **Edge + Cloud AI architecture** inspired by the state-of-the-art **Skyra** methodology. 
 
-By utilizing local optimized models for rapid inference and powerful cloud Vision-Language Models (VLMs) like Qwen2.5 VL for explainable "Chain of Thought" reasoning, TruthSeeker provides users with fast, reliable, and interpretable forensic analysis of modern media.
-
----
-
-## ✨ Key Features
-
-### 📱 Android Edge Client
-*   **Quick Local Scan**: Uses a quantized `TimeSformer` (Divided Space-Time Attention) running on CPU via TFLite (XNNPack) to instantly detect anomalies in video frames.
-*   **Cloud Deep Forensics**: Sends complex media to a deployed Qwen2.5 VL model for heavy Chain-of-Thought (CoT) reasoning to provide detailed explanations for its verdicts (e.g., pointing out shape distortion, unnatural object appearance).
-*   **Screen Capture Widget**: A floating overlay service that allows users to seamlessly scan media while browsing social platforms without needing to download files.
-
-### 🕵️‍♂️ Fact-Checking Microservices
-*   **Skyra Phi-3 Fact-Checker**: A local FastAPI service running a quantized `Phi-3-mini` LLM on CPU. It performs real-time web searches via DuckDuckGo to verify claims and returns a True/False/Misleading verdict with evidence.
-*   **Rumor Verifier (Whisper)**: A Streamlit dashboard that transcribes YouTube news clips using local `Whisper` and utilizes `Gemini-1.5-Flash` to cross-reference statements with reputed news sources, plotting the results on a timeline.
-
-### 🧠 Deepfake Detection Ensembles
-*   **Spatial Model**: A custom PyTorch CNN with spatial attention designed to focus on high-frequency blending artifacts and texture jittering.
-*   **Temporal Model**: An adapted `TimeSformer` fine-tuned to catch unnatural physics and motion inconsistencies over video sequences.
-
----
-
-## 🏗️ System Architecture
-
-```mermaid
-graph TD
-    subgraph Mobile Client
-        A[Android App Kotlin]
-        A1[Quick Scan TimeSformer TFLite]
-        A2[Floating Scan Widget]
-        A3[Chat Fact-Checker]
-        
-        A --> A1
-        A --> A2
-        A --> A3
-    end
-
-    subgraph Python Backend & APIs
-        B[Skyra FactCheck API FastAPI + Phi-3]
-        C[Qwen2.5 VL Cloud API]
-        D[Streamlit Ensemble & Rumor Verifier]
-    end
-
-    A3 <-->|REST API| B
-    A -->|Heavy Forensics| C
-    
-    subgraph External Sources
-        E[DuckDuckGo Search]
-        F[YouTube/News Sources]
-    end
-    
-    B -->|Live Web Query| E
-    D -->|Transcription & Verification| F
-```
+By utilizing local optimized models for rapid inference and powerful cloud Vision-Language Models (VLMs) like Qwen2.5-VL for explainable "Chain of Thought" reasoning, TruthSeeker provides users with fast, reliable, and interpretable forensic analysis of modern media.
 
 ---
 
@@ -76,70 +24,68 @@ graph TD
 
 | Directory / File | Description |
 | :--- | :--- |
-| 📱 `kotlearn/` | The main Android Studio project containing the Kotlin application. |
-| 🕵️ `factcheck/` | Python FastAPI backend utilizing `Phi-3-mini-4k-instruct-q4.gguf` for local fact-checking. |
-| 🎙️ `wisper/` | Streamlit app (`app1.py`) for transcribing and verifying rumors using Whisper & Gemini. |
-| 👁️ `ensemble/` | PyTorch spatial model definition (`spatial_model.py`) and its Streamlit inference UI. |
-| ⏳ `modelly/Edge/` | Temporal video model logic (`tmodel.py`) utilizing Facebook's TimeSformer. |
+| 📱 `kotlearn/` | The Android Studio project containing the Kotlin application. |
+| 🚀 `skyra_data/` | The AMD MI300X cloud backend (Training, Consolidation, and `skyra_api.py` Deployment). |
+| 🕵️ `factcheck/` | Python FastAPI backend utilizing `Phi-3-mini` for local fact-checking. |
+| 🧠 `temporal2/` & `modelly/` | Scripts for training the TimeSformer engine and converting it to Edge TFLite format. |
+| ☁️ `audio_api.py` | Google Colab deployment script for advanced Audio XAI and TimeSformer Attention Maps. |
 
 ---
 
-## 🚀 Getting Started
+## 🚀 How to Run the Ecosystem
 
-### 1. Android App Setup
+The TruthSeeker ecosystem is powered by a network of distributed microservices. Here is how to boot the entire system:
+
+### 1. The Mobile App (Android Client)
 1. Open the `kotlearn` folder in **Android Studio**.
-2. Ensure you have the required `lip_flex.tflite` model placed in the `assets/` folder.
-3. Sync Gradle and run the app on a physical device or emulator (API 26+).
+2. **Local Model Dependency:** Ensure that the pre-trained `lip_flex.tflite` model is inside `kotlearn/app/src/main/assets/`. *(Note: Due to size constraints, you must compile this yourself using the `temporal2` and `modelly` scripts if it is missing).*
+3. **Build & Run:** Click the "Run" button to emulate it on an API 26+ device, or click `Build > Build Bundle(s) / APK(s) > Build APK(s)` to generate an APK for your physical phone.
 
-### 2. Local Fact-Check API Setup
-To enable the AI Fact-Checker within the Android app:
+### 2. The Cloud Deep Forensics Server (AMD MI300X)
+This server handles heavy Chain-of-Thought deepfake analysis using Qwen2.5-VL.
+
+**A. Training Skyra from Scratch**
+SSH into your AMD server, navigate to the folder, and run the pipeline:
+```bash
+cd skyra_data
+# 1. Download the 20GB dataset from Hugging Face
+python3 get_videos.py
+
+# 2. Consolidate the annotations into a master JSON
+python3 consolidate.py
+
+# 3. Train the model using LoRA and ROCm survival flags
+python3 train_skyra.py
+```
+
+**B. Deploying the Skyra API**
+Once the model is trained, boot the inference server:
+```bash
+cd skyra_data
+python3 skyra_api.py
+```
+*The API will start securely on `0.0.0.0:8000` with Uvicorn signal bypasses enabled.*
+
+### 3. The Colab XAI Server (Audio & TimeSformer)
+This endpoint handles audio deepfake detection and generates visual forensic grids using Integrated Gradients and Attention Maps.
+1. Upload `audio_api.py` (or `audio_api(1).ipynb`) to Google Colab.
+2. Ensure you have the `Wav2Vec2` and `temporal_checkpoint3.pth` model weights in your connected Google Drive.
+3. Run the notebook/script. It will start a FastAPI server and expose it to the internet using **localtunnel**.
+4. **Important:** Copy the generated `https://xxxx.loca.lt` URL and update the `COLAB_AUDIO_URL` constant inside `kotlearn/app/src/main/java/com/example/kotlearn/FactCheckApi.kt`, then rebuild the Android app.
+
+### 4. The Local Fact-Checker (Laptop/Local Network)
+This acts as a fast, offline LLM agent to verify text claims.
+1. Download the [Phi-3-mini-4k-instruct-q4.gguf](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf) model and place it in the `factcheck/models/` directory.
+2. Start the local server:
 ```bash
 cd factcheck
 python -m venv venv2
 source venv2/bin/activate  # (or venv2\Scripts\activate on Windows)
 pip install fastapi uvicorn llama-cpp-python duckduckgo-search
-```
-*Ensure you download the [Phi-3-mini-4k-instruct-q4.gguf](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf) model and place it in `factcheck/models/`.*
-```bash
+
 python app1.py
 ```
-*The API will start on `0.0.0.0:8000`, making it accessible to the Android app on the same network.*
-
----
-
-## 🏋️‍♂️ Training the Models from Scratch
-
-Due to file size constraints, the pre-trained deepfake weights (`.pth`, `.h5`) and the on-device Edge model (`.tflite`) are not included in the repository. You can recreate them by running the provided training and compilation scripts.
-
-### 1. Training the Temporal Model
-Train the `TimeSformer` physics engine using your own dataset:
-```bash
-# Point to your pre-extracted video frames directory
-python temporal2/train.py --data_dir /path/to/your/dataset --epochs 10 --batch_size 2
-```
-*The best model weights will be saved as `temporal_best_model.pth` in the checkpoints directory.*
-
-### 2. Converting to TFLite (Android Edge)
-To deploy your newly trained temporal model to Android, convert it to a `.tflite` package:
-1. Copy your new `temporal_best_model.pth` to `modelly/Edge/`.
-2. Run the Edge compilation script:
-```bash
-cd modelly/Edge
-pip install ai-edge-torch
-python convertoedge.py
-```
-3. Rename the generated output to `lip_flex.tflite` and place it in `kotlearn/app/src/main/assets/`.
-
-*(Note: If you have backup datasets like `kotlearn2.zip` locally, they are ignored by Git and won't be pushed).*
-
----
-
-## 🔬 Methodology & The Skyra Inspiration
-
-This project draws heavy inspiration from the **Skyra** methodology for AI-generated video detection. Instead of relying solely on binary classification, the architecture emphasizes **Grounded Artifact Reasoning**:
-1.  **Low-Level Forgery Detection**: Identifying texture anomalies, unnatural blur, and color over-saturation.
-2.  **Violation of Laws**: Utilizing VLMs to detect object inconsistency (e.g., sudden appearances), shape distortion, and violation of physical laws (e.g., impossible rigid-body crossing).
-3.  **Explainability**: Providing users with clear, step-by-step reasoning (Chain-of-Thought) about *why* a piece of media is flagged as synthetic.
+*The API will start on `0.0.0.0:8000`. Ensure your Android phone is on the same Wi-Fi network as the computer running this server.*
 
 ---
 <div align="center">
