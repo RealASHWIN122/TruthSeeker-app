@@ -1,0 +1,73 @@
+import os
+import random
+import shutil
+from tqdm import tqdm
+
+# ==========================================
+# ⚙️ CONFIGURATION
+# ==========================================
+# The folder containing your raw, unsplit videos
+RAW_DATA_DIR = r"B:\download\TruthSeeker-app\train" 
+
+# The folder where the model expects to find the structured data
+OUTPUT_DIR = r"B:\download\TruthSeeker-app\temporal_dataset"
+
+SPLIT_RATIO = 0.8  # 80% Train, 20% Val
+# ==========================================
+
+def split_and_move(category):
+    """Handles the 80/20 splitting and moving for 'real' or 'fake'."""
+    source_dir = os.path.join(RAW_DATA_DIR, category)
+    
+    if not os.path.exists(source_dir):
+        print(f"❌ Error: Cannot find {source_dir}. Did you already move them?")
+        return
+
+    # Grab all video files
+    all_files = [f for f in os.listdir(source_dir) if f.lower().endswith(('.mp4', '.avi', '.mov'))]
+    
+    if len(all_files) == 0:
+        print(f"⚠️ Warning: No videos found in {source_dir}. Skipping.")
+        return
+
+    # SHUFFLE: Randomize the dataset so the model doesn't memorize sequential clips
+    random.seed(42) 
+    random.shuffle(all_files)
+
+    # Calculate the mathematical split index
+    split_index = int(len(all_files) * SPLIT_RATIO)
+    
+    train_files = all_files[:split_index]
+    val_files = all_files[split_index:]
+
+    # Create the target directories
+    train_target = os.path.join(OUTPUT_DIR, "train", category)
+    val_target = os.path.join(OUTPUT_DIR, "val", category)
+    os.makedirs(train_target, exist_ok=True)
+    os.makedirs(val_target, exist_ok=True)
+
+    print(f"\n🚀 Moving '{category}' videos...")
+    print(f"   Total: {len(all_files)} | Train: {len(train_files)} | Val: {len(val_files)}")
+
+    # Move Train files
+    for f in tqdm(train_files, desc=f"Moving to Train [{category}]", unit="file"):
+        src_path = os.path.join(source_dir, f)
+        dst_path = os.path.join(train_target, f)
+        shutil.move(src_path, dst_path)
+        
+    # Move Val files
+    for f in tqdm(val_files, desc=f"Moving to Val [{category}]", unit="file"):
+        src_path = os.path.join(source_dir, f)
+        dst_path = os.path.join(val_target, f)
+        shutil.move(src_path, dst_path)
+
+if __name__ == "__main__":
+    print("🪓 Initiating 80/20 Dataset Mover (Instant Transfer)...")
+    
+    # Process both categories
+    split_and_move("real")
+    split_and_move("fake")
+    
+    print(f"\n✅ SUCCESS! Your dataset has been permanently moved to: {OUTPUT_DIR}")
+    print("Your raw folders should now be empty.")
+    print("You are officially cleared to run `python run.py` and start training!")

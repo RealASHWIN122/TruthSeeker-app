@@ -4,11 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
-import android.os.Build
 import android.util.Log
 import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.gpu.CompatibilityList
-import org.tensorflow.lite.gpu.GpuDelegate
 import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -18,101 +15,71 @@ class DeepfakeDetector(context: Context) {
 
     private var interpreter: Interpreter? = null
     private val MODEL_NAME = "lip_flex.tflite"
+
+    // TimeSformer Requirements
     private val NUM_FRAMES = 8
-    private val HEIGHT = 64
-    private val WIDTH = 144
+    private val HEIGHT = 224
+    private val WIDTH = 224
     private val CHANNELS = 3
 
     init {
         val options = Interpreter.Options()
 
-        // 1. Emulator Check
-        val isEmulator = Build.FINGERPRINT.contains("generic") ||
-                Build.FINGERPRINT.contains("unknown") ||
-                Build.MODEL.contains("google_sdk") ||
-                Build.MODEL.contains("Emulator") ||
-                Build.MODEL.contains("Android SDK built for x86") ||
-                Build.MANUFACTURER.contains("Genymotion")
+        // Use XNNPack for CPU execution (supports the TimeSformer's 3D Attention)
+        options.setUseXNNPACK(true)
+        val numProcessors = Runtime.getRuntime().availableProcessors()
+        options.setNumThreads(if (numProcessors > 2) numProcessors - 1 else 1)
 
-        if (isEmulator) {
-            Log.d("DeepfakeDetector", "Emulator detected. Forcing CPU mode.")
-            options.numThreads = 4
-        } else {
-            // 2. TFLite 2.16+ GPU Delegate Initialization
-            val compatList = CompatibilityList()
-            if (compatList.isDelegateSupportedOnThisDevice) {
-                try {
-                    val delegateOptions = GpuDelegate.Options().apply {
-                        setInferencePreference(GpuDelegate.Options.INFERENCE_PREFERENCE_SUSTAINED_SPEED)
-                    }
-                    options.addDelegate(GpuDelegate(delegateOptions))
-                    Log.d("DeepfakeDetector", "GPU Delegate Enabled")
-                } catch (e: Exception) {
-                    Log.e("DeepfakeDetector", "GPU initialization failed. Falling back to CPU.", e)
-                    options.numThreads = 4
-                }
-            } else {
-                Log.d("DeepfakeDetector", "GPU not supported on this device. Using CPU.")
-                options.numThreads = 4
-            }
-        }
-
-        // 3. Load Model
         try {
             val modelBuffer = loadModelFile(context, MODEL_NAME)
-            if (modelBuffer != null) {
-                interpreter = Interpreter(modelBuffer, options)
-                Log.d("DeepfakeDetector", "Model Loaded Successfully")
-            }
+            interpreter = Interpreter(modelBuffer, options)
+            Log.d("DeepfakeDetector", "🚀 SUCCESS: TimeSformer Engine Online (CPU Mode)!")
         } catch (e: Exception) {
-            Log.e("DeepfakeDetector", "Error loading model", e)
+            Log.e("DeepfakeDetector", "❌ FATAL LOAD ERROR: ${e.message}")
+            e.printStackTrace()
         }
     }
 
+    private fun loadModelFile(context: Context, modelName: String): ByteBuffer {
+        val fileDescriptor = context.assets.openFd(modelName)
+        val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
+        return inputStream.channel.map(
+            FileChannel.MapMode.READ_ONLY,
+            fileDescriptor.startOffset,
+            fileDescriptor.declaredLength
+        )
+    }
+
     fun analyzeVideo(context: Context, videoUri: Uri): Pair<String, String> {
-        if (interpreter == null) return Pair("Error", "Model failed to load")
+        val safeInterpreter = interpreter ?: return Pair("Error", "Model Not Loaded")
 
-        try {
-            // Safe mime-type checks for non-video files
-            val mimeType = context.contentResolver.getType(videoUri)
-            if (mimeType?.startsWith("audio") == true) {
-                Thread.sleep(1000)
-                return Pair("Authentic", "85%")
-            }
-            if (mimeType?.startsWith("image") == true) {
-                Thread.sleep(1000)
-                return Pair("Authentic", "92%")
-            }
-
+        return try {
             val frames = extractFrames(context, videoUri)
-            if (frames.size < NUM_FRAMES) {
-                return Pair("Error", "Media too short")
-            }
+            if (frames.size < NUM_FRAMES) return Pair("Error", "Clip too short")
 
-            val frameBuffer = ByteBuffer.allocateDirect(1 * NUM_FRAMES * HEIGHT * WIDTH * CHANNELS * 4)
+            // Allocate buffer for [1, 3, 8, 224, 224] format
+            val frameBuffer = ByteBuffer.allocateDirect(1 * CHANNELS * NUM_FRAMES * HEIGHT * WIDTH * 4)
             frameBuffer.order(ByteOrder.nativeOrder())
-            val residueBuffer = ByteBuffer.allocateDirect(1 * (NUM_FRAMES - 1) * HEIGHT * WIDTH * CHANNELS * 4)
-            residueBuffer.order(ByteOrder.nativeOrder())
 
-            fillBuffers(frames, frameBuffer, residueBuffer)
+            fillBuffer(frames, frameBuffer)
 
-            val outputBuffer = Array(1) { FloatArray(2) }
-            val inputs = arrayOf(frameBuffer, residueBuffer)
-            val outputs = mapOf(0 to outputBuffer)
+            // TimeSformer outputs a single logit [1, 1]
+            val outputBuffer = Array(1) { FloatArray(1) }
+            safeInterpreter.run(frameBuffer, outputBuffer)
 
-            interpreter?.runForMultipleInputsOutputs(inputs, outputs)
+            val rawLogit = outputBuffer[0][0]
 
-            val fakeProbability = outputBuffer[0][1]
+            // Sigmoid conversion for PyTorch logits
+            val fakeProbability = (1.0 / (1.0 + Math.exp(-rawLogit.toDouble()))).toFloat()
             val verdict = if (fakeProbability > 0.50f) "Fake" else "Authentic"
 
-            // Calculate confidence cleanly
-            val confidence = "${(if (verdict == "Fake") fakeProbability else 1f - fakeProbability) * 100}%"
+            val confidenceValue = (if (verdict == "Fake") fakeProbability else 1f - fakeProbability) * 100
+            val confidence = String.format("%.2f%%", confidenceValue)
 
-            return Pair(verdict, confidence)
-
+            Pair(verdict, confidence)
         } catch (e: Exception) {
-            Log.e("DeepfakeDetector", "Analysis failed", e)
-            return Pair("Error", "Analysis Failed")
+            Log.e("DeepfakeDetector", "Analysis Crash: ${e.message}")
+            Pair("Error", "Analysis Failed")
         }
     }
 
@@ -131,50 +98,38 @@ class DeepfakeDetector(context: Context) {
                     frames.add(Bitmap.createScaledBitmap(it, WIDTH, HEIGHT, true))
                 }
             }
-        } catch (e: Exception) {
-            Log.e("DeepfakeDetector", "Frame extraction error", e)
         } finally {
-            try { retriever.release() } catch (e: Exception) {}
+            try { retriever.release() } catch (e: Exception) { /* Ignore */ }
         }
         return frames
     }
 
-    private fun fillBuffers(frames: List<Bitmap>, frameBuf: ByteBuffer, resBuf: ByteBuffer) {
-        frameBuf.rewind(); resBuf.rewind()
+    private fun fillBuffer(frames: List<Bitmap>, frameBuf: ByteBuffer) {
+        frameBuf.rewind()
+
         val pixelArrays = frames.map { bitmap ->
             val pixels = IntArray(WIDTH * HEIGHT)
             bitmap.getPixels(pixels, 0, WIDTH, 0, 0, WIDTH, HEIGHT)
             pixels
         }
 
-        // Populate frames buffer
-        for (pixels in pixelArrays) {
-            for (pixel in pixels) {
-                frameBuf.putFloat((pixel shr 16 and 0xFF) / 255.0f)
-                frameBuf.putFloat((pixel shr 8 and 0xFF) / 255.0f)
-                frameBuf.putFloat((pixel and 0xFF) / 255.0f)
-            }
-        }
+        // ImageNet Normalization (Required for TimeSformer)
+        val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
+        val std = floatArrayOf(0.229f, 0.224f, 0.225f)
 
-        // Populate residues buffer
-        for (i in 1 until pixelArrays.size) {
-            val curr = pixelArrays[i]; val prev = pixelArrays[i - 1]
-            for (j in curr.indices) {
-                resBuf.putFloat(((curr[j] shr 16 and 0xFF) - (prev[j] shr 16 and 0xFF)) / 255.0f)
-                resBuf.putFloat(((curr[j] shr 8 and 0xFF) - (prev[j] shr 8 and 0xFF)) / 255.0f)
-                resBuf.putFloat(((curr[j] and 0xFF) - (prev[j] and 0xFF)) / 255.0f)
+        // PyTorch layout: [Channels, Frames, Height, Width]
+        for (c in 0 until CHANNELS) {
+            for (f in 0 until NUM_FRAMES) {
+                val pixels = pixelArrays[f]
+                for (pixel in pixels) {
+                    val color = when (c) {
+                        0 -> (pixel shr 16 and 0xFF) / 255.0f // R
+                        1 -> (pixel shr 8 and 0xFF) / 255.0f  // G
+                        else -> (pixel and 0xFF) / 255.0f     // B
+                    }
+                    frameBuf.putFloat((color - mean[c]) / std[c])
+                }
             }
-        }
-    }
-
-    private fun loadModelFile(context: Context, modelName: String): ByteBuffer? {
-        return try {
-            val fileDescriptor = context.assets.openFd(modelName)
-            val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
-            inputStream.channel.map(FileChannel.MapMode.READ_ONLY, fileDescriptor.startOffset, fileDescriptor.declaredLength)
-        } catch (e: Exception) {
-            Log.e("DeepfakeDetector", "Could not find model file in assets", e)
-            null
         }
     }
 

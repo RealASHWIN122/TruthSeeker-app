@@ -1,57 +1,57 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from llama_cpp import Llama
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 import time
 
-import logging
-logging.getLogger("streamlit").setLevel(logging.ERROR)
+app = FastAPI(title="Skyra Phi-3 Fact-Checker")
 
-app = FastAPI(title="TruthSeeker Local Fact-Check API")
-
-print("Waking up the local AI... (This might take 10-20 seconds)")
+# --- 1. LOAD THE LLM ---
+print("Waking up Phi-3... (Running on CPU for stability)")
 try:
-    # Load the Phi-3 model into your laptop's RAM
+    # Load the Phi-3 model
     llm = Llama(
         model_path="models/Phi-3-mini-4k-instruct-q4.gguf",
-        n_ctx=4096,      # Memory size for reading search results
-        n_gpu_layers=0,  # 0 = Run on CPU (perfect for integrated graphics)
-        verbose=False    # Keeps the terminal output clean
+        n_ctx=2048,      # Context window for search results
+        n_gpu_layers=0,  # 0 = CPU only (prevents VRAM crashes)
+        verbose=False
     )
-    print("✅ AI is awake and ready!")
+    print("✅ Phi-3 is awake and ready!")
 except Exception as e:
     print(f"❌ Error loading model: {e}")
-    print("Make sure 'Phi-3-mini-4k-instruct-q4.gguf' is inside a folder named 'models'!")
+    print("Ensure 'Phi-3-mini-4k-instruct-q4.gguf' is in the 'models' folder.")
 
-# Define what the Android App will send us
+# --- 2. DATA MODELS ---
 class CheckRequest(BaseModel):
     claim_text: str
 
+# --- 3. SEARCH LOGIC ---
 def web_search(query: str):
-    """Searches DuckDuckGo silently in the background."""
+    """Searches DuckDuckGo for live evidence."""
+    print(f"🌐 Searching the web for: {query}")
     try:
-        results = DDGS().text(query, max_results=3)
-        if not results:
-            return "No recent news found."
-        
-        # Format the search results cleanly
-        evidence = "\n".join([f"- {r.get('title')}: {r.get('body')}" for r in results])
-        return evidence
+        with DDGS() as ddgs:
+            results = [r for r in ddgs.text(query, max_results=3)]
+            if not results:
+                return "No recent news or evidence found."
+            
+            # Format results into a single string for the AI
+            evidence = "\n".join([f"- {r.get('title')}: {r.get('body')}" for r in results])
+            return evidence
     except Exception as e:
-        print(f"Search error: {e}")
-        return "Search unavailable."
+        print(f"⚠️ Search failed: {e}")
+        return "Search unavailable due to network timeout."
 
-# The actual API Endpoint the Android App hits
+# --- 4. API ENDPOINT ---
 @app.post("/verify")
 def verify_claim(request: CheckRequest):
     claim = request.claim_text
-    
     print(f"\n🔍 Fact-checking: {claim}")
     
-    # 1. Grab live data from the web
+    # Step A: Get live data
     evidence = web_search(claim)
     
-    # 2. Build the exact prompt structure that Phi-3 expects
+    # Step B: Construct the Phi-3 Prompt
     prompt = f"""<|user|>
 You are an expert Fact-Checking AI. Verify this claim using ONLY the provided evidence.
 
@@ -62,19 +62,19 @@ EVIDENCE FROM WEB:
 
 TASK:
 1. Verdict: Is it True, False, Misleading, or Unverified?
-2. Explanation: Explain why in 1 or 2 short sentences.
+2. Explanation: Explain why in 3,4 sentences, citing the evidence and listing the sources along with their dates. If evidence is insufficient, say "Unverified".
 
 FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
 Verdict: [Your Verdict]
 Explanation: [Your Explanation]<|end|>
 <|assistant|>"""
 
-    # 3. Make the AI think and generate the answer
+    # Step C: Generate the Verdict
     start_time = time.time()
     output = llm(
         prompt, 
         max_tokens=150, 
-        temperature=0.1,  # Low temperature = strict, factual answers
+        temperature=0.1,  # Keep it factual/deterministic
         stop=["<|end|>"], 
         echo=False
     )
@@ -82,13 +82,14 @@ Explanation: [Your Explanation]<|end|>
     result_text = output['choices'][0]['text'].strip()
     print(f"⚡ Done in {round(time.time() - start_time, 2)} seconds.")
     
-    # Send the JSON back to the Android phone
     return {
         "result": result_text, 
         "evidence_used": evidence
     }
 
+# --- 5. LAUNCH ---
 if __name__ == "__main__":
     import uvicorn
-    # host="0.0.0.0" is magic: it allows your phone to connect over your WiFi network!
+    # Listening on 0.0.0.0 allows your phone to connect via Wi-Fi
+    print("🚀 Server starting on Port 8000...")
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:background="@android:color/white"
+    android:elevation="8dp"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Choose Scan Type"
+        android:textStyle="bold" />
+
+    <Button
+        android:id="@+id/btnQuickScan"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Quick Scan" />
+
+    <Button
+        android:id="@+id/btnDeepScan"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Deep Scan" />
+</LinearLayout>
